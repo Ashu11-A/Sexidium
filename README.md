@@ -11,9 +11,9 @@
 <p>
 <img alt="Minecraft 1.21+" src="https://img.shields.io/badge/Minecraft-1.21%2B-302D41?style=for-the-badge&labelColor=f5c2e7">
 <img alt="Paper 26.1.x" src="https://img.shields.io/badge/Paper-26.1.x-302D41?style=for-the-badge&labelColor=fab387">
-<img alt="Velocity" src="https://img.shields.io/badge/Velocity-proxy-302D41?style=for-the-badge&labelColor=89b4fa">
+<img alt="Velocity 3.5.1" src="https://img.shields.io/badge/Velocity-3.5.1-302D41?style=for-the-badge&labelColor=89b4fa">
 <img alt="Java 25" src="https://img.shields.io/badge/Java-25-302D41?style=for-the-badge&labelColor=cba6f7">
-<img alt="Bun" src="https://img.shields.io/badge/Bun-TypeScript-302D41?style=for-the-badge&labelColor=f38ba8">
+<img alt="Bun 1.3+" src="https://img.shields.io/badge/Bun-1.3%2B-302D41?style=for-the-badge&labelColor=f38ba8">
 </p>
 
 <br>
