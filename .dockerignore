@@ -1,0 +1,10 @@
+.git
+.gradle
+build
+**/build
+**/node_modules
+bot/node_modules
+test
+*.log
+packages/core-old
+packages/module-paper-old

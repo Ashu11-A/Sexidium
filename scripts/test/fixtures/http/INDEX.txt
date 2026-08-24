@@ -1,0 +1,14 @@
+5b56e774b29e4c8fbc313740124447254ba644cd	https://fill.papermc.io/v3/projects/paper/versions/26.1.2/builds
+cc0f441c7b40bff25e1381c3f16823305f39cb16	https://api.modrinth.com/v2/project/multiverse-core/version?loaders=%5B%22paper%22%5D
+213a251a516c90cee6e707a391f882b5024fe293	https://api.modrinth.com/v2/project/fancynpcs/version?loaders=%5B%22paper%22%5D
+a331e018d38fea72de2b80b5252d26b42cbdcdca	https://api.modrinth.com/v2/project/fancyholograms/version?loaders=%5B%22paper%22%5D
+8bc650b7cca1162e2b95e8b7a53708e6d037db7f	https://api.modrinth.com/v2/project/skinsrestorer/version?loaders=%5B%22paper%22%5D
+969fa3ad5cfbd0d37a3358e69e4644b99304e0b9	https://api.modrinth.com/v2/project/betterhud2/version?loaders=%5B%22paper%22%5D
+e83eac15d39c43e5f7f0997eb2c3ada58b9b0c31	https://api.modrinth.com/v2/project/fastasyncworldedit/version?loaders=%5B%22paper%22%5D
+ef7aec40bb9933f67c1a9c7ace79ee182833b3f2	https://api.modrinth.com/v2/project/axiom-paper-plugin/version?loaders=%5B%22paper%22%5D
+1a0006df1c8627a62d4fb7a7f5fe0e2bd9d3e829	https://fill.papermc.io/v3/projects/velocity/versions/3.5.1/builds
+5b56e774b29e4c8fbc313740124447254ba644cd	https://fill.papermc.io/v3/projects/paper/versions/26.1.2/builds
+cc0f441c7b40bff25e1381c3f16823305f39cb16	https://api.modrinth.com/v2/project/multiverse-core/version?loaders=%5B%22paper%22%5D
+213a251a516c90cee6e707a391f882b5024fe293	https://api.modrinth.com/v2/project/fancynpcs/version?loaders=%5B%22paper%22%5D
+a331e018d38fea72de2b80b5252d26b42cbdcdca	https://api.modrinth.com/v2/project/fancyholograms/version?loaders=%5B%22paper%22%5D
+8bc650b7cca1162e2b95e8b7a53708e6d037db7f	https://api.modrinth.com/v2/project/skinsrestorer/version?loaders=%5B%22paper%22%5D

@@ -1,0 +1,76 @@
+# Docker Compose debug stack for Sexidium.
+#
+#   postgres  the shared database the plugin AND the Discord bot (TypeORM) talk to
+#   paper     builds the plugin and runs scripts/init-paper.sh (Paper server + bundled bot)
+#
+# Usage:
+#   export SEXIDIUM_BOT_TOKEN=...        # your Discord bot token (or put it in ./.env)
+#   docker compose up --build
+#
+# Notes for ROOTLESS Docker (data-root under ~/.local/share/docker):
+#   * Postgres uses a tmpfs for its data dir — a named/anon volume fails to set POSIX-ACL xattrs
+#     under rootless ("failed to set xattr system.posix_acl_default"). The DB is therefore ephemeral
+#     (fine for debug; recreated each `up`).
+#   * The `paper` service needs internet at RUNTIME (apt/bun/Paper/plugin/gradle downloads). Rootless
+#     networking (pasta/slirp4netns) must be healthy — i.e. net.ipv4.ip_forward=1 must stay set. If
+#     those downloads fail, run the server on the HOST instead and use only Postgres from compose:
+#         docker compose up -d postgres
+#         SEXIDIUM_DB_TYPE=postgres SEXIDIUM_DB_HOST=127.0.0.1 SEXIDIUM_DB_PORT=5433 SEXIDIUM_API_TOKEN=... \
+#           SEXIDIUM_BOT_TOKEN=... scripts/init-paper.sh
+#     (the plugin+bot then run on the host, which has working internet, against the dockerized DB.)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sexidium
+      POSTGRES_USER: sexidium
+      POSTGRES_PASSWORD: sexidium
+    # No host port published: the `paper` service reaches the DB as `postgres:5432` over the internal
+    # compose network, so the full-docker stack needs no host port (and can't collide with a native
+    # Postgres on 5432/5433). For the HOST-NATIVE fallback, add `ports: ["5433:5432"]` here and connect
+    # to 127.0.0.1:5433.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sexidium -d sexidium"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  paper:
+    image: sexidium-paper:local
+    build:
+      # Network-free build (no apt/curl here) — the toolchain + Bun are installed by the entrypoint at
+      # runtime, since this host's BuildKit sandbox can't reach DNS but the runtime network can.
+      context: .
+      dockerfile: docker/Dockerfile.paper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Networked backend the plugin + bot share (embedded SQLite is rejected while the bot is enabled).
+      # Reached over the internal compose network by service name — no internet egress needed for the DB.
+      SEXIDIUM_DB_TYPE: postgres
+      SEXIDIUM_DB_HOST: postgres
+      SEXIDIUM_DB_PORT: "5432"
+      SEXIDIUM_DB_NAME: sexidium
+      SEXIDIUM_DB_USER: sexidium
+      SEXIDIUM_DB_PASSWORD: sexidium
+      # Shared secret (WS handshake + /command bridge). Override via ./.env if you like.
+      SEXIDIUM_API_TOKEN: ${SEXIDIUM_API_TOKEN:-sexidium-debug-secret}
+      # Discord bot — token comes from the host env / ./.env, not from this file.
+      SEXIDIUM_BOT_TOKEN: ${SEXIDIUM_BOT_TOKEN:-}
+      SEXIDIUM_BOT_GUILD_ID: ${SEXIDIUM_BOT_GUILD_ID:-}
+      SEXIDIUM_BOT_DOWNLOAD_RUNTIME: "false"
+      SEXIDIUM_BOT_RUNTIME: bun
+      SERVER_PORT: "25565"
+      # Keep the JVM modest so a memory-constrained host doesn't kill it (the earlier exit 137).
+      JAVA_ARGS: "-Xms512M -Xmx1536M"
+    ports:
+      - "25565:25565"
+      - "19132:19132/udp"
+    volumes:
+      - .:/workspace
+    stdin_open: true
+    tty: true

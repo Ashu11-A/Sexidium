@@ -1,0 +1,61 @@
+{
+  "name": "listen-channel-discord",
+  "type": "module",
+  "main": "build/index.js",
+  "scripts": {
+    "check": "tsc --noEmit && echo ✔ Ok",
+    "build": "tsup",
+    "dev": "bun --env-file=.env ./src/index.ts",
+    "dev:dev": "bun --env-file=.env.dev ./src/index.ts",
+    "watch": "bun --watch --env-file=.env ./src/index.ts",
+    "watch:dev": "bun --watch --env-file=.env.dev ./src/index.ts",
+    "start": "bun --env-file=.env .",
+    "start:dev": "bun --env-file=.env.dev ."
+  },
+  "dependencies": {
+    "@constatic/base": "latest",
+    "@magicyan/discord": "1.7.3",
+    "chalk": "5.6.2",
+    "discord.js": "14.26.2",
+    "react": "^19.2.6",
+    "satori": "^0.26.0",
+    "sharp": "^0.34.5",
+    "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.10",
+    "@types/react": "^19.2.15",
+    "tsup": "^8.5.1",
+    "typescript": "5.7.2"
+  },
+  "imports": {
+    "#env": [
+      "./build/env.js"
+    ],
+    "#base": [
+      "./build/discord/index.js"
+    ],
+    "#functions": [
+      "./build/functions/index.js"
+    ],
+    "#database": [
+      "./build/database/index.js"
+    ],
+    "#server": [
+      "./build/server/index.js"
+    ],
+    "#menus": [
+      "./build/menus/index.js"
+    ],
+    "#tools": [
+      "./build/tools/index.js"
+    ],
+    "#lib/*": [
+      "./build/lib/*"
+    ],
+    "#shared/*": [
+      "./build/shared/*"
+    ]
+  },
+  "baseVersion": "1.5.7"
+}

@@ -1,0 +1,24 @@
+[Unit]
+# transparent_hugepage=always e a principal suspeita dos SIGSEGV que derrubaram os
+# tres nos Paper dentro do coletor (ZMark/ZRelocate no ZGC; antes, G1CMOopClosure no
+# G1 -- dois coletores, mesma assinatura, logo a causa nao e o coletor).
+#
+# Esta unit pega o boot cedo, antes de qualquer JVM mapear memoria, o que importa:
+# o ajuste so vale para mapeamentos criados DEPOIS dele. Ela vive em /etc, no overlay
+# do Rugix, que sobrevive a reboot mas NAO a um update do umbrelOS (slots A/B). Por
+# isso ela e a metade rapida da solucao; a metade durave e o container
+# `sexidium-host-tuning` do stack, que reaplica o valor e sobrevive ao update porque
+# /var/lib/docker e um bind persistente de verdade.
+Description=transparent_hugepage=madvise (estabilidade de JVM/ZGC) [Sexidium]
+Documentation=https://github.com/ashu11a/sexidium
+DefaultDependencies=no
+After=local-fs.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo madvise > /sys/kernel/mm/transparent_hugepage/enabled'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+phase preflight version=26.1.2 java=25
+phase artifacts
+gradle build lobbyWorldZip=assets/worlds/lobbies/Medieval-BreadBuilds.zip menuPack=present
+copy plugins/Sexidium-Paper-1.0.0.jar
+download paper.jar <- https://fill-data.papermc.io/v1/objects/1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7/paper-26.1.2-74.jar
+verify_sha256 paper.jar 1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7
+phase base-config
+set_property server.properties online-mode=false
+set_property server.properties enforce-secure-profile=false
+set_property server.properties server-port=25565
+set_property server.properties query.port=25565
+set_property server.properties rcon.port=25575
+set_property server.properties view-distance=16
+set_property server.properties simulation-distance=10
+phase plugins
+download plugins/Geyser-Spigot.jar <- https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+download plugins/Multiverse-Core.jar <- https://cdn.modrinth.com/data/3wmN97b8/versions/wvHdu4gu/multiverse-core-5.7.3.jar
+download plugins/FancyNpcs.jar <- https://cdn.modrinth.com/data/EeyAn23L/versions/sEt3BDRu/FancyNpcs-2.11.0%2B370.jar
+download plugins/FancyHolograms.jar <- https://cdn.modrinth.com/data/5QNgOj66/versions/sVWtLhTt/FancyHolograms-2.11.0%2B193.jar
+download plugins/SkinsRestorer.jar <- https://cdn.modrinth.com/data/TsLS8Py5/versions/wXS6bHiC/SkinsRestorer.jar
+download plugins/BetterHud.jar <- https://cdn.modrinth.com/data/JUl6WIK2/versions/bedIGBtb/BetterHud-bukkit-2.0.0.jar
+download plugins/FastAsyncWorldEdit.jar <- https://cdn.modrinth.com/data/z4HZZnLr/versions/Ad3NnAQP/FastAsyncWorldEdit-Paper-2.15.3.jar
+download plugins/AxiomPaper.jar <- https://cdn.modrinth.com/data/evkiwA7V/versions/igh8dKkm/AxiomPaperPlugin-5.0.4-for-MC26.1.jar
+phase warmup-and-patch
+warmup_boot timeout=180
+phase report-and-start
+exec java -Xms1G -Xmx2G -jar paper.jar nogui

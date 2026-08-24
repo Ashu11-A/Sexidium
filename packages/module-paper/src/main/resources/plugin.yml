@@ -1,0 +1,64 @@
+name: Sexidium
+version: '${version}'
+main: com.sexidium.paper.PaperSexidiumPlugin
+# The Minecraft version this plugin is written against. Paper reads it as a compatibility floor, not a
+# requirement: declaring an older one silently opts into legacy behaviour for every API break since — but
+# declaring a NEWER one than the running server is fatal, Paper refuses to load the plugin at all.
+#
+# So this tracks the OLDEST server the jar is meant to run on, which is 26.1.2 (see PAPER_VERSION in
+# scripts/init-paper.sh for why the pin went back there). One jar then covers 26.1.2 and 26.2 alike.
+#
+# What that legacy opt-in actually costs on 26.2: ApiVersion.ABSTRACT_CUBE_MOB, where Slime moved under
+# the new AbstractCubeMob alongside the sulfur cube. Sexidium names neither type anywhere, so the shim is
+# inert here. Re-check that before raising this — the point of the floor is that it is deliberate.
+api-version: '26.1'
+author: Sexidium
+description: Cross-platform Sexidium adapter for modern Paper servers.
+# Region-threaded Paper fork support. All scheduling goes through region/entity/async schedulers
+# (never the legacy BukkitScheduler) and teleports are async, so the plugin is safe under Folia.
+folia-supported: true
+libraries:
+  # JDBC drivers for the three supported backends (database.type). Paper downloads them from Maven
+  # Central at enable time and adds them to the plugin classloader; the relevant one is selected at
+  # runtime by Class.forName, so an unused driver costs only the (cached) download.
+  - org.xerial:sqlite-jdbc:3.53.1.0
+  - com.mysql:mysql-connector-j:9.1.0
+  - org.postgresql:postgresql:42.7.4
+depend:
+  - Multiverse-Core
+softdepend:
+  - BetterHud
+  - FancyNpcs
+  - FancyHolograms
+  - SkinsRestorer
+  - floodgate
+  - Geyser-Spigot
+commands:
+  sexidium:
+    description: Main command for Sexidium.
+    usage: /sx <menu|start|experience|lobby|friend|exit|join|top|rank|auth|admin>
+    aliases: [sx]
+  exit:
+    description: Leave your current Sexidium game.
+    usage: /exit
+    aliases: [leave]
+    permission: sexidium.play
+  menu:
+    description: Open the Sexidium menu.
+    usage: /menu
+    permission: sexidium.play
+  lobby:
+    description: Open the Sexidium lobby (party, queue and browser).
+    usage: /lobby [invite|accept|leave|kick|disband|list|join|mode|teams|size|visibility|start|queue]
+    permission: sexidium.play
+  friend:
+    description: Manage your Sexidium friends.
+    usage: /friend [add|accept|remove|list|requests]
+    permission: sexidium.play
+permissions:
+  sexidium.play:
+    description: Use player-facing Sexidium commands.
+    default: true
+  sexidium.admin:
+    description: Manage Sexidium games.
+    default: op

@@ -1,0 +1,12 @@
+import "./announce.js";
+import "./auth.js";
+import "./console.js";
+import "./event.js";
+import "./leaderboard.js";
+import "./mc.js";
+import "./ping.js";
+import "./rank.js";
+import "./restart.js";
+import "./serverinfo.js";
+import "./sessions.js";
+import "./syncranks.js";

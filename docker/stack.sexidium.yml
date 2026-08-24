@@ -1,0 +1,545 @@
+# Rede Sexidium (Velocity + lobby + 3 workers) como um stack do Portainer.
+#
+#   UMA imagem   eclipse-temurin:25-jdk para todo mundo (MC 26.x exige Java 25).
+#   UMA pasta    sexidium-data contém `server/` e NADA MAIS: é dela que os 5
+#                containers inicializam, e é o único lugar onde existe um jar.
+#   UM parâmetro SX_NODE decide o que cada container é (docker/node-entry.sh).
+#
+# TRÊS VOLUMES, TRÊS PAPÉIS — a separação existe para que a pasta que se atualiza
+# não seja a mesma que se acumula.
+#
+#   sexidium-data  -> /srv/sexidium   A FONTE. Só `server/`:
+#       server/paper.jar          o binário do servidor, um arquivo para os 4 backends
+#       server/plugins/*.jar      os jars carregados por todos (--add-extra-plugin-dir)
+#       server/libraries/ versions/ cache/   o que o paperclip resolve pelo CWD
+#       server/maps/<bundle>/     os TEMPLATES de mapa que vêm dentro do jar. Nenhuma
+#                                 JVM abre isto como mundo: uma partida COPIA daqui
+#                                 para um mundo novo -- é por isso que compartilhar é
+#                                 seguro, e por isso que só quem tem a capability
+#                                 MAP_AUTHORITY (o lobby) pode ESCREVER.
+#       server/.provisioned       o carimbo que os nós esperam antes de bootar
+#     Escrita UMA vez pelo `init`; só lida enquanto os nós rodam. É isto que torna
+#     impossível um worker rodar um build antigo: há um único caminho por jar.
+#
+#   sexidium-<nó> -> /srv/nodes/<nó>   O ESTADO daquele processo, fora da fonte.
+#       world/, server.properties, config/, *.yml, *.json, plugins/<Plugin>/ (data
+#       folders, ZERO jars). libraries/ versions/ cache/ paper.jar são symlinks para
+#       /srv/sexidium/server. worlds/ é um diretório REAL do nó com um symlink POR
+#       BUNDLE (worlds/tntwar -> /srv/sexidium/server/maps/tntwar).
+#     Por que não cabe na pasta única, e não é escolha de design: o session.lock do
+#     Minecraft admite UM dono por world/, e o Paper reescreve o server.properties --
+#     com a porta daquele nó -- a cada boot, antes mesmo de checar o lock. Estado
+#     compartilhado seria dois servidores gravando os mesmos chunks.
+#     O MESMO caminho no `init` e no nó (/srv/nodes/<nó>), de propósito: o
+#     provisionador escreve caminhos absolutos em symlink e config, e um prefixo
+#     diferente de cada lado os quebraria em silêncio.
+#     logs/ mora AQUI DENTRO. Já teve volume próprio (sexidium-logs-<nó>); a
+#     separação não pagava: o que se queria dela -- retenção -- é uma POLÍTICA
+#     (SX_LOG_RETENTION_DAYS, podada a cada boot pelo entrypoint), não um ponto de
+#     montagem, e o preço eram dez volumes para cinco processos.
+#     O volume tem o MESMO nome do container (`sexidium-lobby`); é legal em Docker,
+#     que namespaceia os dois separadamente, e é o que faz `docker volume ls` e
+#     `docker ps` lerem como uma lista só.
+#
+#   sexidium-build -> /srv/build   O que só o provisionamento usa: repo/, gradle/,
+#     artifacts/, test-reports/. Fica fora da fonte para que `server/` seja
+#     exatamente o que os servidores executam, e nada além disso.
+#
+#   Os nós bootam com `-jar /srv/sexidium/server/paper.jar --plugins <cwd>/plugins
+#   --add-extra-plugin-dir /srv/sexidium/server/plugins`. Ver docs/deployment.md.
+#
+# TOPOLOGIA DE REDE  — um namespace por container, todos na rede `sexidium`.
+#   Cada nó tem a SUA pilha de rede e resolve os outros pelo DNS do compose
+#   (`lobby`, `worker-1`, …, e também pelo `container_name`). Nada de backend é
+#   publicado: quem sai para a LAN é só o `proxy`, com a 25565.
+#
+#   Até 2026-08 todos compartilhavam o namespace do container `netns`, com a
+#   justificativa de que o loopback protegia backends em `online-mode=false`.
+#   Essa premissa foi verificada e é FALSA para o que este repo implanta: os
+#   quatro backends rodam modern forwarding (`proxies.velocity.enabled: true`),
+#   e o Paper recusa o login ANTES de existir sessão quando o HMAC do
+#   `velocity:player_info` não confere -- provado ao vivo com um cliente de
+#   protocolo mínimo rodando DENTRO do namespace compartilhado:
+#     "This server requires you to connect with Velocity." → EOF.
+#   Quem autentica é `VelocityProxy.checkIntegrity`, não o socket. Loopback era
+#   defesa em profundidade, não o portão -- e o segredo (`/srv/nodes/proxy/forwarding.secret`)
+#   mora no volume que todos os nós montam, então execução em qualquer nó sempre
+#   o expôs, com ou sem namespace compartilhado.
+#
+#   O namespace único cobrava caro: os 4 backends recebem `self-host-port: 8163`
+#   do BetterHud e três de quatro perdiam a corrida pela porta a cada boot
+#   ("Address already in use"), com o vencedor mudando de boot para boot. Com um
+#   namespace por container os quatro bindam 8163 sem se ver.
+#
+# PORTAS  proxy 25565 (única publicada) | api 8787 pack 8788 rpc 8789 dentro do proxy
+#         lobby :25566 api 8800 | worker-1 :25567 api 8810 | -2 :25568 8820 | -3 :25569 8830
+#         SX_API_PORT_BASE=8800 existe para o lobby não colidir com o 8787/8788 do proxy.
+#         A 8788 NÃO é publicada: `module-velocity` não tem servidor de resource pack
+#         (a capability PACK_HOST não tem implementação), então a publicação antiga
+#         apontava para um listener que nunca existiu. Ver docs/known-issues.md.
+#
+# SX_NODES é APPEND-ONLY. A identidade dos dados segue o NOME do nó (o volume
+# sexidium-<nó>), mas a porta segue o ÍNDICE na lista: remover um nó do meio
+# renumera todos os seguintes e cada um passa a atender na porta do vizinho.
+#
+# ATUALIZAR: rode o serviço `init` de novo (ele provisiona e SAI -- `Exited (0)` é o
+#            estado CORRETO desse container, não uma falha) e reinicie os nós na
+#            ordem worker-3 → worker-2 → worker-1 → lobby → proxy.
+
+x-node: &node
+  image: eclipse-temurin:25-jdk
+  # O repo mora no volume de BUILD, não na fonte: `server/` tem de conter só o que
+  # os servidores executam. O entrypoint é a única coisa que todos os containers
+  # leem de lá, e é por isso que /srv/build é montado até nos nós.
+  entrypoint: ["/bin/bash", "/srv/build/repo/docker/node-entry.sh"]
+  restart: unless-stopped
+  stop_grace_period: 120s
+  networks: [sexidium]
+  # Sem `depends_on: service_completed_successfully` de propósito: isso faria o
+  # `up -d` do Portainer bloquear os 5-15 min do provisionamento e estourar o
+  # timeout do deploy. Quem serializa é o carimbo server/.provisioned, que cada nó
+  # espera em node-entry.sh -- mesmo efeito, sem prender o cliente da API.
+  # ATENÇÃO: `volumes:` num serviço SUBSTITUI esta lista, não soma a ela. Todo
+  # serviço repete estes dois e acrescenta os seus -- não é redundância, é a única
+  # forma de manter os dois. Ninguém herda esta lista como está.
+  volumes:
+    - sexidium-data:/srv/sexidium
+    - sexidium-build:/srv/build
+  # Complementar ao log em arquivo, não substituto: este bloco governa o `docker
+  # logs` (que no default do json-file é ILIMITADO e enche o disco do host em dias
+  # com um Paper falante); 20m × 5 por container = 600 MiB de teto para os 6.
+  # O log canônico, o que se faz backup/quota, é o arquivo em /srv/nodes/<nó>/logs/,
+  # dentro do volume daquele serviço. Os dois resolvem problemas diferentes; manter
+  # ambos.
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+x-env: &env
+  SX_HOME: /srv/sexidium
+  # Repo e caches de Gradle no volume de build: pesados, descartáveis e irrelevantes
+  # para quem só roda o servidor.
+  ROOT_DIR: /srv/build/repo
+  GRADLE_USER_HOME: /srv/build/gradle/home
+  GRADLE_PROJECT_CACHE_DIR: /srv/build/gradle/project-cache
+  # A raiz do estado por nó. NÃO é um volume: é o ponto de montagem onde cada
+  # container recebe o SEU volume (e o `init` recebe os cinco, nos mesmos caminhos).
+  NETWORK_DIR: /srv/nodes
+  SX_NODES: "lobby worker-1 worker-2"
+  # A PASTA ÚNICA. Explícita no stack, e não só no default de scripts/lib/velocity.sh,
+  # porque quem mais precisa dela é o docker/node-entry.sh -- que monta a linha de
+  # comando do java e NUNCA carrega velocity.sh. Um lugar só para mudar o caminho.
+  SX_SHARED_INSTALL: /srv/sexidium/server
+  SX_SHARED_PLUGINS: /srv/sexidium/server/plugins
+  SHARED_DIR: /srv/sexidium/server
+  # O carimbo .provisioned tem de morar num caminho que TODOS os containers enxergam.
+  # NETWORK_DIR não serve mais: /srv/nodes só existe como ponto de montagem e cada nó
+  # enxerga apenas o próprio subdiretório -- um carimbo ali seria invisível para os
+  # outros quatro, e os cinco esperariam 1800 s por algo que já foi escrito.
+  SX_STATE_DIR: /srv/sexidium/server
+  # Bytes BAIXADOS (tarballs do Paper, jars do Modrinth), que não são o que as JVMs
+  # executam -- por isso ficam no volume de build e não dentro de server/. Três coisas
+  # diferentes, três nomes: artifacts = o que se baixou, server/ = o que se executa,
+  # server/maps = o que se lê e COPIA. Nada em maps/ é aberto como mundo vivo.
+  SX_ARTIFACT_CACHE: /srv/build/artifacts
+  SX_SHARED_MAPS: /srv/sexidium/server/maps
+  # A árvore ÚNICA de mundos de experiência VIVOS, montada em todos os nós. É o que
+  # permite qualquer worker assumir um mundo ocioso -- o balanceamento que o placement
+  # decide. Quem impede dois donos ao mesmo tempo é o lease no banco, não o filesystem.
+  SX_SHARED_WORLDS: /srv/sexidium/server/worlds
+  # O log4j2 do Paper rola por dia/boot e guarda .gz PARA SEMPRE -- não há política
+  # de retenção nenhuma no default. O entrypoint poda por idade antes de bootar.
+  SX_LOG_RETENTION_DAYS: "30"
+  SX_PORT_BASE: "25566"
+  SX_API_PORT_BASE: "8800"
+  # PACK do BetterHud: base das portas por no (lobby 26011, worker-1 26012, ...) e o
+  # host PUBLICO anunciado ao cliente. O frpc do Umbrel publica 26010-26099 1:1, entao
+  # a porta interna, a publicada no loopback e a anunciada sao o MESMO numero -- o
+  # BetterHud monta a URL com a porta em que ele mesmo escuta, e um mapeamento cruzado
+  # anunciaria a porta errada. Vazio em SX_PACK_HOST_IP = pack inalcancavel = BetterHud
+  # desligado (era o estado ate agora, e continua sendo o default seguro).
+  SX_PACK_PORT_BASE: "26011"
+  SX_PACK_HOST_IP: "150.230.84.206"
+  SX_API_PORT_STRIDE: "10"
+  # Escuta vs. anúncio, separados desde que cada nó ganhou seu próprio namespace.
+  # BIND é onde o backend abre o socket (0.0.0.0 dentro do container, que não
+  # publica porta nenhuma); ADVERTISE é o endereço que o proxy disca, com `%s`
+  # substituído pelo nome do nó -> `lobby:25566`, `worker-1:25567`, … Vazio faria
+  # o proxy usar o BIND, que era o comportamento correto sob o namespace único.
+  SX_BACKEND_BIND: "0.0.0.0"
+  SX_BACKEND_ADVERTISE: "%s"
+  PROXY_PORT: "25565"
+  PROXY_BIND: "0.0.0.0"
+  PROXY_JAVA_ARGS: "-Xms256M -Xmx512M"
+  SX_LOBBY_MEMORY: "-Xms1G -Xmx2G"
+  SX_WORKER_MEMORY: "-Xms1G -Xmx3G"
+  # Ver longe é barato, TICAR longe não é. view = chunks enviados ao cliente (32 é o
+  # teto do protocolo); simulation = o que o servidor tica por jogador a cada tick, e
+  # subir isso junto com a heap de 3G acima estoura o -XX:+ExitOnOutOfMemoryError, ou
+  # seja, o worker some em vez de engasgar. Os chunks além de 10 aparecem congelados.
+  #
+  # "Barato" era otimista. Baixado de 32 para 16 depois dos SIGSEGV do worker-1: o custo é
+  # QUADRÁTICO no raio, então 32 (65×65 = 4225 chunks por jogador) contra 16 (33×33 = 1089)
+  # é 3,9x menos chunk para gerar, serializar, enviar e manter vivo. Não era view-distance
+  # que corrompia o heap -- os dumps mostram um bug do G1, com ponteiro-lixo diferente a cada
+  # crash -- mas era ele que produzia os ~130 MB/s de alocação que mantinham o marking
+  # concorrente rodando SEM PARAR, e é dentro do marking que os cinco crashes caíram. Menos
+  # lixo por segundo, menos tempo dentro da janela onde o bug existe.
+  SX_VIEW_DISTANCE: "16"
+  SX_SIMULATION_DISTANCE: "10"
+  SX_BOT_NODE: lobby
+  # O provisionador tem uma função que força `auth.require-for-login: false` nos BACKENDS -- ela
+  # existe para o servidor de teste standalone, onde ninguém quer digitar senha. Numa rede
+  # reprovisionada ela DESLIGAVA o portão de login a cada deploy, calada, e o proxy roda
+  # online-mode=false: qualquer nickname entrava. Por isso ficou em "0".
+  #
+  # Agora está em "1" DE PROPÓSITO, em par com SX_AUTH_GATE=false abaixo: com o portão do proxy
+  # aberto, deixar os backends em `auto` os faria discordar do proxy -- o gate fail-closed do
+  # backend barraria no mundo quem o proxy acabou de admitir. Os dois lados dizem a mesma coisa.
+  # Ao religar o portão, esta chave volta para "0" JUNTO com SX_AUTH_GATE=true.
+  SX_DISABLE_AUTH_GATE: "1"
+  # FAWE e Axiom são ferramentas de edição de mundo, não dependências de runtime.
+  # Estavam nos 4 nós de produção por default herdado do servidor de teste: estes
+  # zeros já existiam, mas nada REMOVE um jar que uma execução anterior instalou, e
+  # os 84 MB sobreviviam por inércia. Com a instalação compartilhada nova a árvore
+  # nasce do zero e simplesmente não os terá -- a intenção declarada aqui passa a
+  # valer de fato. O usuário confirmou que não edita mapa em produção com //wand.
+  INSTALL_WORLDEDIT: "0"
+  INSTALL_AXIOM: "0"
+  # `mysql`, não `mariadb`: lib/sexidium.sh só considera mysql|postgres para habilitar o
+  # bot, e o SqlDialect mapeia ambos para o mesmo driver.
+  SEXIDIUM_DB_TYPE: mysql
+  SEXIDIUM_DB_HOST: sexidiumdb
+  SEXIDIUM_DB_PORT: "3306"
+  SEXIDIUM_DB_NAME: sexidium
+  SEXIDIUM_DB_USER: sexidium
+  SEXIDIUM_DB_PASSWORD: ${DB_PASSWORD}
+  SEXIDIUM_API_TOKEN: ${API_TOKEN}
+  SEXIDIUM_FORWARDING_SECRET: ${FORWARDING_SECRET}
+  # Login sem atrito, em camadas -- cada uma desligada por padrão e ligada quando verificada.
+  # SESSIONS e APPROVAL sobem JUNTOS: sessões sem um caminho de aprovação seriam uma regressão,
+  # porque hoje um jogador vinculado entra de qualquer IP para sempre.
+  # PREMIUM é só do proxy (online-mode é por conexão lá e em nenhum outro lugar) e exige que o
+  # nick seja verificado na Mojang; HOLD é a única opção que deixa uma conexão NÃO verificada
+  # chegar a um mundo, então é a última a ser ligada.
+  # PORTÃO DE LOGIN DESLIGADO POR DECISÃO DO OPERADOR, por tempo indeterminado.
+  # Religar é trocar para "true" AQUI -- e só depois de haver um bot de Discord de verdade no ar
+  # (SEXIDIUM_BOT_TOKEN preenchido). Enquanto não houver, `true`/`auto` tornam a rede intransponível:
+  # o lobby anuncia a capability BOT_HOST pela sua ROLE, sem olhar `bot.enabled`, o proxy acredita
+  # que existe um bot, e todo login é recusado pedindo `/auth <código>` a um bot que ninguém pode
+  # executar. Está explícito aqui, e não só no default de velocity.sh, porque é no stack que um
+  # operador procura por que o portão está aberto.
+  SX_AUTH_GATE: "false"
+  SX_AUTH_SESSIONS: "false"
+  SX_AUTH_APPROVAL: "false"
+  SX_AUTH_PREMIUM: "false"
+  SX_AUTH_HOLD: "false"
+  # Sal dos hashes de IP guardados. Vazio = derivado de api.token, que funciona mas é
+  # compartilhado; definir por deploy é o que impede os hashes de serem comparáveis entre deploys.
+  SX_AUTH_IP_PEPPER: ""
+  # Canal de fallback quando as DMs do jogador estão fechadas. Vazio = só DM.
+  SEXIDIUM_AUTH_CHANNEL_ID: ""
+
+services:
+  # Ajusta UM knob do kernel do HOST e fica dormindo. Nao e um no da rede.
+  #
+  # POR QUE existe: `transparent_hugepage=always` e a principal suspeita dos SIGSEGV
+  #   que derrubaram os tres nos (ZMark::mark_and_follow no worker-2, ZRelocate no
+  #   worker-1, ZMark::follow_object no lobby, todos com a JVM inteira dentro do GC).
+  #   A troca G1 -> ZGC feita em node-entry.sh partiu da tese de que aquilo era bug do
+  #   G1; os mesmos crashes voltaram com frames do ZGC, entao a tese caiu e o que
+  #   sobra e uma causa comum aos dois coletores. THP=always e a candidata barata.
+  #
+  # POR QUE em container, e nao em /etc/sysfs.d ou uma unit systemd: o host e umbrelOS,
+  #   que roda Rugix (`init=/usr/bin/rugix-ctrl`) com raiz em overlay e slots A/B. Fora
+  #   de /data, /home, /var/log e /var/lib/docker, NADA em / sobrevive -- um update do
+  #   SO troca a particula de sistema inteira. O estado do Docker sobrevive, entao uma
+  #   restart policy e o unico gancho de boot confiavel que existe nesta maquina.
+  #
+  # PRECISA ser privileged: sysfs entra read-only num container normal. Verificado que
+  #   funciona mesmo aninhado, com o Portainer do Umbrel rodando docker:dind.
+  #
+  # O sleep infinity nao e desperdicio: e o que faz o container ficar "running" e,
+  # portanto, o que faz o Docker religa-lo (e reaplicar o knob) a cada boot do host.
+  # O laco reaplica de hora em hora porque o valor e global -- outro app do Umbrel pode
+  # mexer nele -- e a correcao so vale para mapeamentos criados DEPOIS dela.
+  host-tuning:
+    image: alpine:3
+    container_name: sexidium-host-tuning
+    privileged: true
+    restart: unless-stopped
+    network_mode: none
+    # `$$` e escape do Compose: o que chega ao /bin/sh e `$SX_THP`. Sem isso o
+    # Portainer interpolaria a variavel no MOMENTO DO DEPLOY e o laco ficaria com o
+    # valor congelado no texto -- e um `$(...)` aqui dentro nem chega ao shell.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        while :; do
+          if [ -w /sys/kernel/mm/transparent_hugepage/enabled ]; then
+            echo "$$SX_THP" > /sys/kernel/mm/transparent_hugepage/enabled
+            echo "[host-tuning] transparent_hugepage agora:"
+            cat /sys/kernel/mm/transparent_hugepage/enabled
+          else
+            echo "[host-tuning] sysfs read-only: nao consigo ajustar THP (falta privileged?)" >&2
+          fi
+          sleep 3600
+        done
+    environment:
+      SX_THP: "${SX_THP:-madvise}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+    mem_limit: 32m
+
+  # One-shot: compila o plugin uma vez e provisiona proxy + os 4 backends no volume.
+  # Termina em `Exited (0)`; é assim que ele deve ficar entre deploys.
+  init:
+    <<: *node
+    container_name: sexidium-init
+    environment:
+      <<: *env
+      SX_NODE: init
+    # O único container que monta os CINCO volumes de nó, porque é o único que
+    # escreve neles -- nos MESMOS caminhos em que cada nó monta o seu, para que os
+    # caminhos absolutos que ele grava (symlinks, config) continuem válidos lá.
+    volumes:
+      - sexidium-data:/srv/sexidium
+      - sexidium-build:/srv/build
+      - sexidium-proxy:/srv/nodes/proxy
+      - sexidium-lobby:/srv/nodes/lobby
+      - sexidium-worker-1:/srv/nodes/worker-1
+      - sexidium-worker-2:/srv/nodes/worker-2
+    restart: "no"
+    mem_limit: 6g
+
+  proxy:
+    <<: *node
+    container_name: sexidium-proxy
+    environment:
+      <<: *env
+      SX_NODE: proxy
+    # Repetir `sexidium-data` é obrigatório: esta lista substitui a do âncora.
+    volumes:
+      - sexidium-data:/srv/sexidium
+      - sexidium-build:/srv/build
+      - sexidium-proxy:/srv/nodes/proxy
+    ports:
+      - "25565:25565/tcp"   # players -- a ÚNICA porta publicada da rede
+    # Ordenação explícita. Sob o `netns` o compose derivava a ordem do
+    # `network_mode: service:netns`; sem ele, a ordem some se não for declarada.
+    # Vale para os dois sentidos: sobe depois dos backends e -- o que importa --
+    # PARA ANTES deles, para o proxy recusar/transferir conexões enquanto os
+    # backends ainda estão salvando mundo, em vez de deixar jogadores presos.
+    # `service_started` e não `service_healthy` de propósito: um Paper leva minutos
+    # para o primeiro `Done (`, e o Velocity não precisa de backend de pé para subir
+    # -- ele reconecta sozinho. Esperar saúde só adiaria o proxy sem ganho.
+    depends_on:
+      lobby: {condition: service_started}
+      worker-1: {condition: service_started}
+      worker-2: {condition: service_started}
+    mem_limit: 1g
+
+  # mem_limit por nó: o heap (SX_*_MEMORY) é só uma parte do RSS de um Paper --
+  # metaspace, code cache, buffers diretos e o mmap dos region files somam ~1-2 GiB.
+  # O lobby media 2,68 de 3,00 GiB com pouquíssimos jogadores; um OOM-kill do cgroup
+  # é SIGKILL, sem shutdown hook e sem save.
+  #
+  # Soma: 1 (proxy) + 4 (lobby) + 3×6 (workers) + 2 (db) = 25 de 31,8 GiB do host.
+  #
+  # Os workers estão em 6g e não em 5g porque `view-distance` é 32 (mcserver.sh:97), ou seja
+  # 65×65 = 4225 chunks enviados por jogador. É isso que enche o RSS e produz a taxa de
+  # alocação que mantém o marking concorrente do G1 rodando sem parar -- a janela em que os
+  # SIGSEGV apareceram. Se a memória voltar a apertar, BAIXAR view-distance rende muito mais
+  # que subir o teto: o custo é quadrático no raio, então 32 -> 16 corta os chunks por jogador
+  # em 4x. `mem_limit` é um teto, não uma reserva; os nós ociosos ficam em ~2,4 GiB.
+  #
+  # CUIDADO com o `init`: ele tem 6g e, ao contrário do que esta nota dizia antes, ele SIM roda
+  # junto com os nós -- um `update` compila no host por ~12 min com os cinco de pé. O pico real
+  # é 25 + 6 = 31 de 31,8 GiB. Há 23 GiB de swap cobrindo, mas não suba mais nenhum teto sem
+  # refazer esta conta.
+  lobby:
+    <<: *node
+    container_name: sexidium-lobby
+    environment:
+      <<: *env
+      SX_NODE: lobby
+    volumes:
+      - sexidium-data:/srv/sexidium
+      - sexidium-build:/srv/build
+      - sexidium-lobby:/srv/nodes/lobby
+    # PORTA DO PACK do BetterHud, publicada so no loopback do host.
+    #
+    # O cliente precisa BAIXAR o pack por HTTP, e o Velocity nao encaminha HTTP -- ele
+    # fala protocolo Minecraft. Por isso a porta sai por fora do proxy. 127.0.0.1 e nao
+    # 0.0.0.0: quem consome e o frpc do Umbrel, que disca no loopback.
+    #
+    # O numero e o MESMO dentro e fora, e isso nao e estetica: o BetterHud monta a URL
+    # que anuncia como http://<self-host-ip>:<porta-em-que-ele-escuta>, entao um
+    # mapeamento 26011->8163 anunciaria 8163 e o download falharia em silencio -- o
+    # sintoma e a boss bar de caixas de caractere desconhecido.
+    #
+    # Uma porta POR NO (26011..26014): o backend em que o jogador esta e quem envia o
+    # pack, entao todos precisam de uma URL alcancavel, e portas separadas evitam
+    # depender de os quatro construirem um pack byte a byte identico.
+    # O frpc publica 26010-26099 1:1 automaticamente -- nada a editar no tunel.
+    ports:
+      - "127.0.0.1:26011:26011/tcp"
+    mem_limit: 4g
+
+  worker-1:
+    <<: *node
+    container_name: sexidium-worker-1
+    environment:
+      <<: *env
+      SX_NODE: worker-1
+    volumes:
+      - sexidium-data:/srv/sexidium
+      - sexidium-build:/srv/build
+      - sexidium-worker-1:/srv/nodes/worker-1
+    # PORTA DO PACK do BetterHud, publicada so no loopback do host.
+    #
+    # O cliente precisa BAIXAR o pack por HTTP, e o Velocity nao encaminha HTTP -- ele
+    # fala protocolo Minecraft. Por isso a porta sai por fora do proxy. 127.0.0.1 e nao
+    # 0.0.0.0: quem consome e o frpc do Umbrel, que disca no loopback.
+    #
+    # O numero e o MESMO dentro e fora, e isso nao e estetica: o BetterHud monta a URL
+    # que anuncia como http://<self-host-ip>:<porta-em-que-ele-escuta>, entao um
+    # mapeamento 26011->8163 anunciaria 8163 e o download falharia em silencio -- o
+    # sintoma e a boss bar de caixas de caractere desconhecido.
+    #
+    # Uma porta POR NO (26011..26014): o backend em que o jogador esta e quem envia o
+    # pack, entao todos precisam de uma URL alcancavel, e portas separadas evitam
+    # depender de os quatro construirem um pack byte a byte identico.
+    # O frpc publica 26010-26099 1:1 automaticamente -- nada a editar no tunel.
+    ports:
+      - "127.0.0.1:26012:26012/tcp"
+    # 6g e nao 5g: este e o no que o planner escolhe primeiro (desempate por nodeId), entao
+    # e o unico que roda experiences de verdade -- e a 5g ele vivia a 88% do teto, acima do
+    # limiar de 85% que o proprio `status` verifica. So o lado Java ja pede Xmx3G +
+    # MaxMetaspaceSize 512m + ~136 threads x 1M + code cache + direct buffers do netty, o que
+    # da 4.0-4.3 GiB antes de qualquer arredondamento de huge page. O orcamento do host
+    # comporta (ver o comentario de mem_limit acima).
+    mem_limit: 6g
+
+  worker-2:
+    <<: *node
+    container_name: sexidium-worker-2
+    environment:
+      <<: *env
+      SX_NODE: worker-2
+    volumes:
+      - sexidium-data:/srv/sexidium
+      - sexidium-build:/srv/build
+      - sexidium-worker-2:/srv/nodes/worker-2
+    # PORTA DO PACK do BetterHud, publicada so no loopback do host.
+    #
+    # O cliente precisa BAIXAR o pack por HTTP, e o Velocity nao encaminha HTTP -- ele
+    # fala protocolo Minecraft. Por isso a porta sai por fora do proxy. 127.0.0.1 e nao
+    # 0.0.0.0: quem consome e o frpc do Umbrel, que disca no loopback.
+    #
+    # O numero e o MESMO dentro e fora, e isso nao e estetica: o BetterHud monta a URL
+    # que anuncia como http://<self-host-ip>:<porta-em-que-ele-escuta>, entao um
+    # mapeamento 26011->8163 anunciaria 8163 e o download falharia em silencio -- o
+    # sintoma e a boss bar de caixas de caractere desconhecido.
+    #
+    # Uma porta POR NO (26011..26014): o backend em que o jogador esta e quem envia o
+    # pack, entao todos precisam de uma URL alcancavel, e portas separadas evitam
+    # depender de os quatro construirem um pack byte a byte identico.
+    # O frpc publica 26010-26099 1:1 automaticamente -- nada a editar no tunel.
+    ports:
+      - "127.0.0.1:26013:26013/tcp"
+    mem_limit: 6g
+
+  # worker-3 REMOVIDO em 2026-08-15, a pedido do operador (3 workers -> 2).
+  #
+  # Removido do FIM da lista, e isso e o que torna a remocao segura: a porta de cada no vem
+  # do seu INDICE em SX_NODES (base + index), entao tirar um no do MEIO renumeraria todos os
+  # seguintes para a porta do vizinho. worker-3 era o ultimo, entao lobby/worker-1/worker-2
+  # mantem 25566/25567/25568 e as portas de pack 26011/26012/26013 exatamente como estavam.
+  #
+  # O volume `sexidium-worker-3` tambem foi removido daqui e apagado no host -- os dados dele
+  # nao existem mais, entao o NOME esta aposentado: nao o reutilize. Para voltar a tres
+  # workers, acrescente um nome NOVO (worker-4) no FIM de SX_NODES, com servico e volume
+  # proprios. A porta vem da POSICAO na lista (26011 + indice), nao do numero no nome -- um
+  # worker-4 entrando como terceiro no atende em 26014, e isso e o esperado.
+
+  # Banco. INERTE até a migração de dados: `profiles` deixa o serviço definido sem
+  # criá-lo em nenhum `up` normal, e é assim que ele TEM de ficar enquanto o
+  # container legado `SexidiumDB` estiver de pé. Subir os dois ao mesmo tempo daria
+  # dois donos para o nome `sexidiumdb` na rede, e o novo começaria com um datadir
+  # VAZIO -- ranks, contas vinculadas e leaderboard apontando para o banco errado.
+  #
+  # Para ativar (janela própria, com a rede parada e dump verificado em mãos):
+  #   1. docker volume create sexidium-db
+  #   2. parar SexidiumDB e copiar e0b2043c…f11 -> sexidium-db com um alpine efêmero
+  #   3. docker rm SexidiumDB   (o volume anônimo NÃO é apagado: é o rollback)
+  #   4. redeploy com COMPOSE_PROFILES=db
+  # O legado que isto conserta: volume ANÔNIMO (um `volume prune` no Portainer apaga
+  # tudo), `mariadb:latest` (tag flutuante, major novo em qualquer restart) e
+  # 3306 publicada em 0.0.0.0:32768, alcançável por toda a LAN.
+  db:
+    profiles: ["db"]
+    image: mariadb:12.3
+    container_name: sexidiumdb
+    restart: unless-stopped
+    networks: [sexidium]
+    # Sem `ports:`. Só os nós da rede `sexidium` falam com o banco.
+    environment:
+      # Só é lido quando o datadir está vazio; num volume migrado o entrypoint o
+      # ignora. Se a var não estiver definida no stack, um datadir vazio faz o
+      # container morrer em vez de nascer sem senha de root -- que é o que se quer.
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - sexidium-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  sexidium:
+    external: true
+
+volumes:
+  # A FONTE. Depois desta versão do stack ela contém `server/` e nada mais -- o repo,
+  # os caches e o estado de cada nó saíram para os volumes abaixo. `docker volume
+  # create` para os novos ANTES do primeiro deploy: `external` recusa o que não existe.
+  sexidium-data:
+    external: true
+  sexidium-build:
+    external: true
+  # UM volume por serviço: estado E log do mesmo nó no mesmo lugar, montado no
+  # MESMO caminho no `init` e no próprio nó. É aqui que mora o world/ -- o que o
+  # session.lock impede de compartilhar. O log fica em <volume>/logs, podado por
+  # idade em cada boot (SX_LOG_RETENTION_DAYS): a retenção que antes justificava um
+  # volume separado é uma política, não um ponto de montagem.
+  sexidium-proxy:
+    external: true
+  sexidium-lobby:
+    external: true
+  sexidium-worker-1:
+    external: true
+  sexidium-worker-2:
+    external: true
+  # sexidium-worker-3 removido junto com o serviço (ver o comentário acima do bloco `db`).
+  # `docker volume create sexidium-db` ANTES do primeiro deploy desta versão do
+  # stack -- um volume vazio não custa nada e evita que a validação de `external`
+  # tropece mesmo com o profile `db` inativo. `external` para que nenhum redeploy
+  # possa recriá-lo por engano (é onde os dados vão morar depois da migração).
+  sexidium-db:
+    external: true

@@ -1,0 +1,13 @@
+# Alpine debug image for the Sexidium Paper server.
+#
+# The image build touches NO network on purpose (this host's BuildKit sandbox can't reach DNS). The
+# toolchain (bash/git/unzip/python3) and Bun are installed by the entrypoint at RUNTIME, where the
+# container's default bridge network has working internet. The entrypoint then builds the plugin and
+# launches the server via scripts/init-paper.sh (repo bind-mounted at /workspace, data in test/paper).
+FROM eclipse-temurin:25-jdk-alpine
+
+ENV PATH="/root/.bun/bin:${PATH}"
+
+WORKDIR /workspace
+# /bin/sh (busybox ash) — bash isn't present until the entrypoint apk-installs it.
+ENTRYPOINT ["/bin/sh", "/workspace/scripts/docker-paper-entry.sh"]

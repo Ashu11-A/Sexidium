@@ -1,0 +1,54 @@
+# The shared database for a Sexidium NETWORK (docker/provision.sh).
+#
+# Separate from docker-compose.yml on purpose: that file is the single-server debug stack (Postgres +
+# one Paper container). This one runs ONLY the database, because the proxy and the backends run
+# natively on the host via scripts/net.sh — they need a JVM, world folders on local disk, and in the
+# workers' case a pinned filesystem, none of which containers make easier here.
+#
+#   docker compose -f docker-compose.network.yml up -d
+#   scripts/net.sh db-wire     # point every node at it
+#   scripts/net.sh restart
+#
+# WHY MYSQL RATHER THAN A SHARED SQLITE FILE
+#   * SQLite serialises every writer on a single file lock. Five processes heartbeating, polling the
+#     message bus and claiming placements against one file is exactly the workload it is worst at.
+#   * The PROXY cannot use SQLite at all: its plugin jar deliberately ships only the MySQL and
+#     Postgres drivers (sqlite-jdbc's native library cannot be relocated). With a SQLite file the
+#     proxy is locked out of the shared state entirely — no auth gate, no placement routing.
+#
+# The port is published so host-native servers can reach it. 3307 rather than 3306 avoids colliding
+# with a MySQL already installed on the machine.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: sexidium-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "${SEXIDIUM_DB_NAME:-sexidium}"
+      MYSQL_USER: "${SEXIDIUM_DB_USER:-sexidium}"
+      MYSQL_PASSWORD: "${SEXIDIUM_DB_PASSWORD:-sexidium}"
+      MYSQL_ROOT_PASSWORD: "${SEXIDIUM_DB_ROOT_PASSWORD:-sexidium-root}"
+    ports:
+      - "${SEXIDIUM_DB_PORT:-3307}:3306"
+    command:
+      # The plugin's schema is created at runtime by SchemaMigrator; these only make the server
+      # behave the way that schema expects.
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # Five nodes, each with a connection plus the bot's pool. The default 151 is plenty, but being
+      # explicit documents the intent.
+      - --max-connections=200
+    volumes:
+      # A BIND MOUNT, not a named volume. Under rootless Docker (data-root in ~/.local/share/docker)
+      # creating a named volume fails with `failed to set xattr "system.posix_acl_default"` while
+      # Docker copies the image's /var/lib/mysql into it -- the same failure docker-compose.yml
+      # documents for Postgres. A bind mount onto an empty directory skips that copy entirely, so it
+      # works AND stays persistent, which tmpfs would not.
+      - ./run/mysql-data:/var/lib/mysql
+    healthcheck:
+      # `mysqladmin ping` answers before the server is ready for real queries, so check a query.
+      test: ["CMD-SHELL", "mysql -u$$MYSQL_USER -p$$MYSQL_PASSWORD -e 'SELECT 1' $$MYSQL_DATABASE || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

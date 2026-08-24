@@ -1,0 +1,217 @@
+phase proxy
+download proxy/velocity.jar <- https://fill-data.papermc.io/v1/objects/b4e3164df5377346854dc6cb9e6a78022b1946ff69e89676313f5f6f1c6f0fb3/velocity-3.5.1-615.jar
+verify_sha256 proxy/velocity.jar b4e3164df5377346854dc6cb9e6a78022b1946ff69e89676313f5f6f1c6f0fb3
+forwarding_secret from-env
+write velocity.toml fresh nodes=4
+phase shared-install
+gradle build lobbyWorldZip=assets/worlds/lobbies/Medieval-BreadBuilds.zip menuPack=present
+copy plugins/Sexidium-Paper-1.0.0.jar
+download paper.jar <- https://fill-data.papermc.io/v1/objects/1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7/paper-26.1.2-74.jar
+verify_sha256 paper.jar 1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7
+download plugins/Multiverse-Core.jar <- https://cdn.modrinth.com/data/3wmN97b8/versions/wvHdu4gu/multiverse-core-5.7.3.jar
+download plugins/FancyNpcs.jar <- https://cdn.modrinth.com/data/EeyAn23L/versions/sEt3BDRu/FancyNpcs-2.11.0%2B370.jar
+download plugins/FancyHolograms.jar <- https://cdn.modrinth.com/data/5QNgOj66/versions/sVWtLhTt/FancyHolograms-2.11.0%2B193.jar
+download plugins/SkinsRestorer.jar <- https://cdn.modrinth.com/data/TsLS8Py5/versions/wXS6bHiC/SkinsRestorer.jar
+install proxy-plugin Sexidium-Velocity-1.0.0.jar
+seed proxy config.yml
+yaml_set proxy/plugins/sexidium/config.yml database.type=mysql
+yaml_set proxy/plugins/sexidium/config.yml database.host=sexidiumdb
+yaml_set proxy/plugins/sexidium/config.yml database.port=3306
+yaml_set proxy/plugins/sexidium/config.yml database.name=sexidium
+yaml_set proxy/plugins/sexidium/config.yml database.user=sexidium
+yaml_set proxy/plugins/sexidium/config.yml database.password=«redacted»
+yaml_set proxy/plugins/sexidium/config.yml api.token=«redacted»
+seed proxy auth block
+yaml_set proxy/plugins/sexidium/config.yml auth.enabled=true
+yaml_set proxy/plugins/sexidium/config.yml auth.require-for-login=false
+yaml_set proxy/plugins/sexidium/config.yml auth.session.enabled=false
+yaml_set proxy/plugins/sexidium/config.yml auth.approval.enabled=false
+yaml_set proxy/plugins/sexidium/config.yml auth.premium.enabled=false
+yaml_set proxy/plugins/sexidium/config.yml auth.hold.enabled=false
+phase build-store
+store stage b0001-ceaba2a151f7
+phase shared-maps
+seed_shared_maps maps
+install proxy-plugin SkinsRestorer.jar
+seed skinsrestorer-config proxy
+yaml_set proxy/plugins/skinsrestorer/config.yml database.type=MYSQL
+yaml_set proxy/plugins/skinsrestorer/config.yml database.host=sexidiumdb
+yaml_set proxy/plugins/skinsrestorer/config.yml database.port=3306
+yaml_set proxy/plugins/skinsrestorer/config.yml database.database=sexidium
+yaml_set proxy/plugins/skinsrestorer/config.yml database.username=sexidium
+yaml_set proxy/plugins/skinsrestorer/config.yml database.password=«redacted»
+phase nodes
+instance lobby role=lobby port=25566 api=8800
+set_property server.properties online-mode=false
+set_property server.properties enforce-secure-profile=false
+set_property server.properties server-port=25566
+set_property server.properties query.port=25565
+set_property server.properties rcon.port=25575
+set_property server.properties view-distance=16
+set_property server.properties simulation-distance=10
+set_property server.properties server-port=25566
+set_property server.properties server-ip=0.0.0.0
+set_property server.properties online-mode=false
+seed paper-global.yml proxies-block
+yaml_set config/paper-global.yml proxies.velocity.enabled=true
+yaml_set config/paper-global.yml proxies.velocity.online-mode=true
+yaml_set config/paper-global.yml proxies.velocity.secret=«redacted»
+pluginjars lobby mode=link
+pin lobby build=b0001-ceaba2a151f7
+yaml_set plugins/Sexidium/config.yml network.enabled=true
+yaml_set plugins/Sexidium/config.yml network.node.id=lobby
+yaml_set plugins/Sexidium/config.yml network.node.role=lobby
+yaml_set plugins/Sexidium/config.yml api.port=8800
+yaml_set plugins/Sexidium/config.yml api.rpc-port=8802
+yaml_set plugins/Sexidium/config.yml bot.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.session.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.approval.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.hold.enabled=false
+yaml_set plugins/Sexidium/config.yml ui.resource-pack.enabled=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.extract-if-missing=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.refresh-when-changed=false
+yaml_set plugins/Sexidium/config.yml hud.betterhud.enabled=false
+seed skinsrestorer-config backend
+yaml_set plugins/SkinsRestorer/config.yml database.type=MYSQL
+yaml_set plugins/SkinsRestorer/config.yml database.host=sexidiumdb
+yaml_set plugins/SkinsRestorer/config.yml database.port=3306
+yaml_set plugins/SkinsRestorer/config.yml database.database=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.username=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.password=«redacted»
+yaml_set install/config/Sexidium/config.yml.staging.lobby network.node.id=
+yaml_set install/config/Sexidium/config.yml.staging.lobby network.node.role=
+yaml_set install/config/Sexidium/config.yml.staging.lobby network.node.address=
+yaml_set install/config/Sexidium/config.yml.staging.lobby network.node.port=0
+yaml_set install/config/Sexidium/config.yml.staging.lobby api.port=0
+yaml_set install/config/Sexidium/config.yml.staging.lobby api.rpc-port=0
+instance worker-1 role=worker port=25567 api=8810
+set_property server.properties online-mode=false
+set_property server.properties enforce-secure-profile=false
+set_property server.properties server-port=25567
+set_property server.properties query.port=25565
+set_property server.properties rcon.port=25575
+set_property server.properties view-distance=16
+set_property server.properties simulation-distance=10
+set_property server.properties server-port=25567
+set_property server.properties server-ip=0.0.0.0
+set_property server.properties online-mode=false
+seed paper-global.yml proxies-block
+yaml_set config/paper-global.yml proxies.velocity.enabled=true
+yaml_set config/paper-global.yml proxies.velocity.online-mode=true
+yaml_set config/paper-global.yml proxies.velocity.secret=«redacted»
+pluginjars worker-1 mode=link
+pin worker-1 build=b0001-ceaba2a151f7
+yaml_set plugins/Sexidium/config.yml network.enabled=true
+yaml_set plugins/Sexidium/config.yml network.node.id=worker-1
+yaml_set plugins/Sexidium/config.yml network.node.role=worker
+yaml_set plugins/Sexidium/config.yml api.port=8810
+yaml_set plugins/Sexidium/config.yml api.rpc-port=8812
+yaml_set plugins/Sexidium/config.yml bot.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.session.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.approval.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.hold.enabled=false
+yaml_set plugins/Sexidium/config.yml ui.resource-pack.enabled=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.extract-if-missing=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.refresh-when-changed=false
+yaml_set plugins/Sexidium/config.yml hud.betterhud.enabled=false
+seed skinsrestorer-config backend
+yaml_set plugins/SkinsRestorer/config.yml database.type=MYSQL
+yaml_set plugins/SkinsRestorer/config.yml database.host=sexidiumdb
+yaml_set plugins/SkinsRestorer/config.yml database.port=3306
+yaml_set plugins/SkinsRestorer/config.yml database.database=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.username=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.password=«redacted»
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 network.node.id=
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 network.node.role=
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 network.node.address=
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 network.node.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 api.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-1 api.rpc-port=0
+instance worker-2 role=worker port=25568 api=8820
+set_property server.properties online-mode=false
+set_property server.properties enforce-secure-profile=false
+set_property server.properties server-port=25568
+set_property server.properties query.port=25565
+set_property server.properties rcon.port=25575
+set_property server.properties view-distance=16
+set_property server.properties simulation-distance=10
+set_property server.properties server-port=25568
+set_property server.properties server-ip=0.0.0.0
+set_property server.properties online-mode=false
+seed paper-global.yml proxies-block
+yaml_set config/paper-global.yml proxies.velocity.enabled=true
+yaml_set config/paper-global.yml proxies.velocity.online-mode=true
+yaml_set config/paper-global.yml proxies.velocity.secret=«redacted»
+pluginjars worker-2 mode=link
+pin worker-2 build=b0001-ceaba2a151f7
+yaml_set plugins/Sexidium/config.yml network.enabled=true
+yaml_set plugins/Sexidium/config.yml network.node.id=worker-2
+yaml_set plugins/Sexidium/config.yml network.node.role=worker
+yaml_set plugins/Sexidium/config.yml api.port=8820
+yaml_set plugins/Sexidium/config.yml api.rpc-port=8822
+yaml_set plugins/Sexidium/config.yml bot.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.session.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.approval.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.hold.enabled=false
+yaml_set plugins/Sexidium/config.yml ui.resource-pack.enabled=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.extract-if-missing=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.refresh-when-changed=false
+yaml_set plugins/Sexidium/config.yml hud.betterhud.enabled=false
+seed skinsrestorer-config backend
+yaml_set plugins/SkinsRestorer/config.yml database.type=MYSQL
+yaml_set plugins/SkinsRestorer/config.yml database.host=sexidiumdb
+yaml_set plugins/SkinsRestorer/config.yml database.port=3306
+yaml_set plugins/SkinsRestorer/config.yml database.database=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.username=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.password=«redacted»
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 network.node.id=
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 network.node.role=
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 network.node.address=
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 network.node.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 api.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-2 api.rpc-port=0
+instance worker-3 role=worker port=25569 api=8830
+set_property server.properties online-mode=false
+set_property server.properties enforce-secure-profile=false
+set_property server.properties server-port=25569
+set_property server.properties query.port=25565
+set_property server.properties rcon.port=25575
+set_property server.properties view-distance=16
+set_property server.properties simulation-distance=10
+set_property server.properties server-port=25569
+set_property server.properties server-ip=0.0.0.0
+set_property server.properties online-mode=false
+seed paper-global.yml proxies-block
+yaml_set config/paper-global.yml proxies.velocity.enabled=true
+yaml_set config/paper-global.yml proxies.velocity.online-mode=true
+yaml_set config/paper-global.yml proxies.velocity.secret=«redacted»
+pluginjars worker-3 mode=link
+pin worker-3 build=b0001-ceaba2a151f7
+yaml_set plugins/Sexidium/config.yml network.enabled=true
+yaml_set plugins/Sexidium/config.yml network.node.id=worker-3
+yaml_set plugins/Sexidium/config.yml network.node.role=worker
+yaml_set plugins/Sexidium/config.yml api.port=8830
+yaml_set plugins/Sexidium/config.yml api.rpc-port=8832
+yaml_set plugins/Sexidium/config.yml bot.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.session.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.approval.enabled=false
+yaml_set plugins/Sexidium/config.yml auth.hold.enabled=false
+yaml_set plugins/Sexidium/config.yml ui.resource-pack.enabled=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.extract-if-missing=false
+yaml_set plugins/Sexidium/config.yml worlds.map-bundle.refresh-when-changed=false
+yaml_set plugins/Sexidium/config.yml hud.betterhud.enabled=false
+seed skinsrestorer-config backend
+yaml_set plugins/SkinsRestorer/config.yml database.type=MYSQL
+yaml_set plugins/SkinsRestorer/config.yml database.host=sexidiumdb
+yaml_set plugins/SkinsRestorer/config.yml database.port=3306
+yaml_set plugins/SkinsRestorer/config.yml database.database=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.username=sexidium
+yaml_set plugins/SkinsRestorer/config.yml database.password=«redacted»
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 network.node.id=
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 network.node.role=
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 network.node.address=
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 network.node.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 api.port=0
+yaml_set install/config/Sexidium/config.yml.staging.worker-3 api.rpc-port=0
+pin proxy build=b0001-ceaba2a151f7
+phase report

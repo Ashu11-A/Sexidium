@@ -1,0 +1,129 @@
+# Gradle
+.gradle/
+build/
+bin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+META-INF/
+
+# Test servers (runtime-generated, not source)
+/test/paper/
+/test/neoforge/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Node.js
+node_modules/
+bot/build/
+bot/.env
+
+# docker-compose local secrets (bot token etc.)
+/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frozen pre-refactor reference snapshots (temporary; deleted after parity sign-off)
+/packages/core-old/
+/packages/module-paper-old/
+
+# World-editing toolchain installed by scripts/install-world-tools.sh (downloaded binaries, not source)
+/tools/
+
+# Archives
+*.zip
+
+# Mundos (lobbies + mapas de minigame) NAO sao versionados. Cada .zip em
+# assets/worlds/ e uma build de terceiro, com licenca propria e sujeita a
+# direitos autorais — varios precisam ser comprados/baixados na fonte original.
+# Redistribuir os arquivos neste repositorio violaria essas licencas, entao so
+# os .txt de procedencia (link da fonte) ficam versionados; quem for rodar a
+# rede baixa os mundos manualmente e coloca em assets/worlds/.
+assets/worlds/**/*.zip
+
+# Logs
+*.log
+
+# Network deployment (docker/provision.sh, run by the `init` service). Instance
+# dirs hold worlds and per-node config; the forwarding secret must never be committed.
+/run/
+**/forwarding.secret
+scripts/network.env
+
+# Remote operation credentials (scripts/remote.sh). The Portainer API key grants
+# control of the host's Docker daemon and the forwarding secret is what authenticates
+# the backends; neither may ever be committed. scripts/remote.env.example is the
+# versioned template.
+scripts/remote.env
+scripts/remote.secrets.json
+
+# Byte-compiled helpers
+__pycache__/
+*.pyc
+
+# Backup bruto extraído de 192.168.1.72 (contém segredos em texto claro)
+/backup-192.168.1.72/
+
+# ---------------------------------------------------------------------------
+# Reforço de segredos (catch-all). As regras específicas acima continuam
+# valendo; estas pegam qualquer arquivo novo de credencial criado por engano.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+*.env
+*.secrets.json
+*secret*.json
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+*.ppk
+# ...mas os templates versionados SEMPRE entram:
+!*.env.example
+!.env.example
+!scripts/remote.env.example
+
+# Estado local do Claude Code (settings pessoais, locks, worktrees).
+# As skills do projeto (.claude/skills/) continuam versionadas.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.claude/shell-snapshots/
+.claude/todos/
+
+# Build / geração extra não coberta acima
+out/
+dist/
+bot/dist/
+.kotlin/
+**/.kotlin/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.hprof
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Node / Bun
+.bun/
+npm-debug.log*
+yarn-error.log*
+
+# IDE / OS extras
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+nbproject/
+desktop.ini

@@ -1,0 +1,79 @@
+# PROPOSTA — NÃO ESTÁ LIGADA A NADA. Não é referenciada por docker/stack.sexidium.yml, não é
+# construída por nenhum pipeline, e ninguém deve `docker build` isto e apontar a stack de produção
+# para o resultado sem decidir isso explicitamente primeiro. Ver a seção 6 do relatório do agente
+# que a escreveu para prós/contras completos; resumo abaixo.
+#
+# O QUE ISTO SERIA, se adotado: uma imagem multi-stage que substitui o `eclipse-temurin:25-jdk` cru
+# que docker/stack.sexidium.yml usa hoje (`x-node: &node image: eclipse-temurin:25-jdk`) por uma
+# imagem já contendo:
+#   1. A toolchain que docker/node-entry.sh:install_toolchain() hoje instala via apt-get TODA VEZ
+#      que o container `init` é RECRIADO (não simplesmente reiniciado -- `docker start` num
+#      container existente preserva a camada gravável, e é isso que faz um `update` de rotina não
+#      pagar esse apt-get; um `stack deploy` que muda a definição do serviço, sim, recria).
+#   2. Opcionalmente, o cache de dependências do Gradle já resolvido como camada de imagem, para
+#      que um build limpo (sem o volume sexidium-build, ex.: disco novo, `docker volume rm`) não
+#      precise baixar ~200-400MB de artefatos Maven do zero.
+#
+# BLOQUEIO CONHECIDO, JÁ DOCUMENTADO NESTE REPO (docker/Dockerfile.paper): o BuildKit deste host NÃO
+# alcança DNS durante `docker build` -- é por isso que o Dockerfile.paper existente instala sua
+# toolchain no ENTRYPOINT (runtime, onde a rede bridge do container FUNCIONA) e não no build da
+# imagem. Esse mesmo bloqueio se aplica aqui: nem o `apt-get` do estágio 1 nem o `./gradlew` do
+# estágio 2 abaixo conseguem baixar nada rodando `docker build` NESTE host. Duas saídas, nenhuma
+# testada por este agente:
+#   (a) buildar esta imagem em outra máquina (workstation do operador, ou um runner de CI) com rede
+#       de verdade, e dar PUSH para um registry que o host de produção consiga PULL -- o caminho de
+#       pull normalmente não passa pelo sandbox do BuildKit, mas isso não foi verificado aqui;
+#   (b) investigar por que o BuildKit deste host específico não resolve DNS (proxy corporativo?
+#       firewall do Umbrel? um builder mal configurado?) e corrigir isso na origem.
+# Sem uma das duas, este Dockerfile não builda neste host, do jeito que Dockerfile.paper já
+# descobriu para o caso mais simples.
+#
+# =============================================================================================
+
+# ---- estágio 1: toolchain -------------------------------------------------------------------
+# Mesmo pacote que install_toolchain() (docker/node-entry.sh) instala em runtime hoje. Cozinhar
+# isto na imagem elimina o apt-get (tipicamente alguns segundos, mais quando o mirror Debian está
+# lento) toda vez que o container `init` é RECRIADO -- não em todo `update` de rotina, que reusa o
+# container existente e already faz esse apt-get virar um no-op via `command -v git && ... && return 0`.
+FROM eclipse-temurin:25-jdk AS toolchain
+RUN apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        bash curl git unzip zip python3 procps ca-certificates openssl \
+        diffutils findutils && \
+    rm -rf /var/lib/apt/lists/*
+
+# ---- estágio 2: dependências do Gradle (OPCIONAL, o mais arriscado dos dois) ------------------
+# Resolve e cacheia as dependências do projeto SEM compilar o código-fonte de verdade, copiando só
+# os arquivos que descrevem o grafo de dependências (wrapper, os *.gradle.kts, gradle.properties).
+# Docker cacheia esta camada enquanto esses arquivos não mudarem -- e SÓ enquanto isso, então um
+# bump de versão de qualquer dependência invalida a camada e volta a baixar tudo no próximo build
+# de IMAGEM (não no próximo deploy: isto roda uma vez por build de imagem, não uma vez por update).
+#
+# NÃO faz `./gradlew build`: só `./gradlew help` (ou `dependencies`) força o Gradle a RESOLVER as
+# dependências declaradas sem exigir o código-fonte de packages/*/src, que ainda não foi copiado
+# aqui de propósito -- copiar o source aqui prenderia esta camada ao hash do CÓDIGO, não ao das
+# dependências, e o cache nunca sobreviveria a um commit normal.
+FROM toolchain AS deps
+WORKDIR /build
+COPY gradle/ gradle/
+COPY gradlew gradlew.bat ./
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY packages/core/build.gradle.kts packages/core/build.gradle.kts
+COPY packages/module-paper/build.gradle.kts packages/module-paper/build.gradle.kts
+COPY packages/module-velocity/build.gradle.kts packages/module-velocity/build.gradle.kts
+ENV GRADLE_USER_HOME=/build/.gradle-home
+RUN ./gradlew --project-cache-dir /build/.gradle-cache help || true
+
+# ---- estágio final: o que roda em produção -----------------------------------------------------
+# Idêntico ao `eclipse-temurin:25-jdk` que docker/stack.sexidium.yml usa hoje, mas com a toolchain
+# (estágio 1) e o cache de dependências (estágio 2, opcional -- comente a linha COPY --from=deps
+# abaixo para uma imagem sem ele) já presentes. docker/node-entry.sh continua sendo o entrypoint;
+# nada no contrato do container muda, só o que ele já traz consigo ao nascer.
+FROM toolchain AS runtime
+COPY --from=deps /build/.gradle-home /root/.gradle-home-seed
+# node-entry.sh aponta GRADLE_USER_HOME para /srv/build/gradle/home (volume persistente). Este
+# seed só ajudaria um volume VAZIO (disco novo) -- copiá-lo por cima de um volume existente
+# sobrescreveria um cache já quente com um mais velho. Ficaria a cargo do entrypoint decidir isso
+# (ex.: `[ -d /srv/build/gradle/home ] || cp -r /root/.gradle-home-seed /srv/build/gradle/home`),
+# o que este arquivo NÃO implementa -- é só a camada; a lógica de adoção é uma mudança de
+# node-entry.sh que este agente não fez, por estar fora do "avalie e proponha" do escopo.

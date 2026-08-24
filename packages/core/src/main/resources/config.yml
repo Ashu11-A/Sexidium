@@ -1,0 +1,1952 @@
+# ============================================================
+#  Sexidium - multi-gamemode minigame plugin
+#  Start a mode with:  /sx start <mode>
+#  Browse all modes in-game with: /menu
+# ============================================================
+
+# Debug mode. When true, extra diagnostics are surfaced:
+#  - chat: spammy internal notices, e.g. the per-sync "<player> inherited the shared inventory" in
+#    Shared Inventory;
+#  - experience HUD: a per-challenge "⚙ … · debug" section listing that twist's live internal state
+#    and tuning knobs (e.g. Chained Together's pull/drag/total forces, the chain solver inputs, the
+#    Double Drops cap, the Shared Life pool mode). Off, players only see the player-facing stat lines.
+# Keep false in production so players never see these internal/spammy readouts.
+debug: false
+
+# The name shown to players and in plugin log messages. Set this to the name you want joining players
+# to see, for example the server owner's player name. Resource-pack metadata updates on the next restart.
+branding:
+  label: "Sexidium"
+
+messages:
+  # MiniMessage formatting is supported (https://docs.advntr.dev/minimessage/format.html)
+  # <brand> is replaced with branding.label. Keep it in a custom prefix to retain the shared label.
+  prefix: "<gradient:#ff5f6d:#ffc371><bold><brand></bold></gradient> <dark_gray>»</dark_gray> "
+  # Used when a player's client language is not supported yet.
+  default-language: en
+  # Used for console-facing plugin messages.
+  console-language: en
+
+# ============================================================
+# World layout
+# The lobby is a persistent, always-loaded world. Minigames and
+# experiences are dispatched to disposable worlds leased
+# from a small pool. Both live under <server-home>/<worlds.root>
+# (NOT under the plugin data folder).
+#
+# Bukkit/Paper/Purpur/Spigot use Multiverse-Core (hard dependency)
+# to register and load these worlds. NeoForge uses the plugin's
+# own reflection-based pipeline.
+# ============================================================
+worlds:
+  # Root folder relative to the server home directory. The plugin
+  # creates this folder (and its lobby subfolder) on first enable.
+  root: "worlds"
+  # Bundled minigame map worlds embedded in the plugin jar (assets/worlds/tntwars) are extracted into
+  # this world root on startup. These templates are listed under minigames.tntwar.maps below.
+  # (Paper only for now.)
+  #
+  # THE JAR IS THE SOURCE OF TRUTH for these maps: the folder on disk is a derived copy, stamped with
+  # the digest of the zip it came from, and replaced whenever that digest changes. Editing a map in
+  # game is authoring; it becomes a real map when it is exported back into assets/worlds/tntwars.
+  #
+  # ONE SERVER (scripts/init-paper.sh): the plugin is the only writer, so leave both switches true and
+  # it manages <world-root>/tntwar/<id> for you.
+  #
+  # A NETWORK (docker/provision.sh): both switches are forced FALSE on every node by
+  # sexidium::seed_node_identity, because the map folders are no longer the node's. The `init` container
+  # seeds ONE shared tree (run/shared/maps) with the very same code — MapBundleCli runs MapBundle — and
+  # each node reaches it through a symlink at worlds/<bundle>. Four JVMs deciding independently about
+  # one directory is the failure this prevents: whichever node booted first would move a template aside
+  # and re-extract it while another node was copying that same folder to start a match, and a failed
+  # clone degrades into a generated world holding the real map's team coordinates — no error, players
+  # spawned inside stone or into the void.
+  map-bundle:
+    # Seed a map whose folder does not exist yet. Set false to manage the map folders yourself.
+    extract-if-missing: true
+    # Also REPLACE a map already on disk when the copy bundled in the jar changed — i.e. when someone
+    # re-exported that map into assets/worlds/tntwars. Without this, a re-exported map never reaches a
+    # server that already has the old one, and the folder has to be deleted by hand.
+    #
+    # It compares a digest recorded in the map folder (.sexidium-map-bundle) against the manifest, so an
+    # UNCHANGED bundle never touches the folder: edits made in-game — blocks, and the sexidium-tntwar.yml
+    # bases/spawns from /sx admin map edit — survive every restart. When a map IS replaced, the previous
+    # folder is moved aside as <name>.replaced-<timestamp> (the newest one is kept, older ones pruned),
+    # so in-game work that was never re-exported is recoverable rather than lost.
+    refresh-when-changed: true
+  # Persistent lobby world. Always loaded, never auto-deleted. On MC 26.1+ it is stored as a custom
+  # dimension at world/dimensions/<lobby.namespace>/<lobby.name> (e.g. world/dimensions/minecraft/lobby).
+  lobby:
+    # Logical world name (the dimension key path). Also registered as the Bukkit/NeoForge world name.
+    name: "lobby"
+    # Dimension namespace the lobby lives under. "minecraft" keeps it beside the vanilla overworld at
+    # world/dimensions/minecraft/lobby — the layout the lobby bundle is seeded into.
+    namespace: "minecraft"
+    # When true, the lobby world is provisioned on startup ONLY if it does not already exist: if a lobby
+    # world bundle is embedded in the plugin jar (built with -PlobbyWorldZip=... / -PlobbyWorldDir=...),
+    # it is extracted and used as the lobby; otherwise a fresh world is generated. An existing lobby is
+    # never overwritten. When false, a missing lobby is skipped (left to the operator to provide).
+    create-if-missing: true
+    # Generator id passed to the platform when creating the lobby. "default" works on
+    # Bukkit, Paper, Purpur, Spigot and NeoForge; for custom Bukkit generators use the
+    # "<plugin>:<id>" convention.
+    generator: "default"
+    # Game mode forced on the lobby world.
+    game-mode: SURVIVAL
+    difficulty: NORMAL
+    # Whether PvP is allowed in the lobby.
+    pvp: false
+    # Optional Multiverse alias so /mv tp <alias> resolves to the lobby.
+    alias: "lobby"
+    # Treat the lobby as the server's default spawn: players are sent here on join, on /sx leave,
+    # on respawn, and when they fall into the void.
+    as-default-spawn: true
+    # Lobby player spawn locations. PREFER setting these in-game so you stand exactly where players should
+    # land (same flow as TNT-War/Combat maps): as an admin, run
+    #   /sx lobby setspawn    pin THE spawn (point 1) to where you are standing
+    #   /sx lobby addspawn    append another spawn point — joiners are spread randomly across all of them
+    #   /sx lobby spawns      list the captured points     /sx lobby clearspawns   remove them all
+    # These are saved to sexidium-lobby.yml in the lobby world folder and used LIVE for join, respawn,
+    # void-redirect and leave-match (no restart needed). The optional fixed block below is a fallback used
+    # only when no spawn points are captured: it pins the lobby world's spawn to these block coordinates on
+    # startup. Remove/comment it to use the world's own spawn point. NOTE: the bundled lobby's level.dat is
+    # stripped when it is seeded into the dimension folder (a dimension must not carry one), so its spawn is
+    # read out of level.dat during seeding and saved as spawn point 1 here. Without that the dimension has no
+    # spawn and vanilla drops joiners hundreds of blocks from the build; if a map carries no readable spawn,
+    # walk to the build after the first boot and run /sx lobby setspawn.
+    # spawn:
+    #   x: -1
+    #   y: 97
+    #   z: 2
+    # Keep the lobby permanently bright: freeze the day/night cycle and pin the time of day.
+    # lock-time true disables doDaylightCycle so the sun never moves; set false for a normal cycle.
+    lock-time: true
+    # Time of day the lobby is frozen at when lock-time is true (ticks): 1000 = morning, 6000 = noon.
+    time: 6000
+    # Lobby protections — applied to players in the lobby world who are NOT in a match.
+    protection:
+      block-break: true       # cancel breaking blocks
+      block-place: true       # cancel placing blocks
+      damage: true            # cancel all damage
+      hunger: true            # keep hunger full
+      item-drop: true         # cancel dropping items
+      interactions: false     # cancel right-click interactions (chests/doors/etc.)
+      no-mob-spawn: true      # block natural animal/hostile mob spawning (NPCs are unaffected)
+      void-redirect: true     # teleport back to spawn when falling into the void
+      void-level: 0.0         # Y below which void-redirect triggers
+  # Disposable game worlds used by minigames & experiences. On MC 26.1+ these are namespaced custom
+  # dimensions at world/dimensions/<temp.namespace>/<name-prefix><id>.
+  temp:
+    # Dimension namespace disposable game worlds live under.
+    namespace: "sexidium_temp"
+    # Legacy subfolder name retained for the NeoForge folder-based backend and tooling.
+    subdir: "temp"
+    # ---- warm world pool ----------------------------------------------------------------------
+    # Creating a world is the most expensive thing the plugin does: terrain generation, a safe-spawn
+    # search and the spawn-prep loop all run on the server thread, so a world created while players are
+    # online is felt by EVERYONE as a freeze. Worse, an experience needs three (its Overworld plus its
+    # linked Nether and End), so pressing "play" used to cost three generations back to back.
+    #
+    # So the pool creates them at BOOT and a start becomes a hand-over: the world already exists, its
+    # folder is renamed into place, and the player joins immediately. The pool is SHARED — minigames take
+    # a disposable Overworld, experiences take an Overworld plus a Nether and an End.
+    #
+    # Sizes are how many are kept READY. Worlds already handed out do not count against them (the old
+    # pool subtracted those, so three simultaneous matches emptied it and stopped it refilling — which is
+    # why it looked like the pool was ignored and every start generated a fresh world).
+    #
+    # Think of these as "how many world hand-overs are free before somebody waits for terrain
+    # generation". The Overworld is deepest because everything consumes one: every minigame, every
+    # experience, and every Death Resets regeneration. NOTE a regeneration actually costs THREE — an
+    # Overworld AND a Nether AND an End, because an experience is three worlds — so with nether/end at 3,
+    # a fourth back-to-back reset generates a sibling inline. Harmless (the world is frozen and nobody
+    # can act) but a multi-second stall; raise nether/end to 5 too if your players die that fast.
+    pool:
+      overworld: 5
+      nether: 3
+      end: 3
+      # Void (empty) worlds for the SkyBlock-style map types — Classic Skyblock, Random Skyblock and
+      # Random Layers build their own island into one of these, so keeping one warm means the world is
+      # never regenerated, only the island is built. overworld-void serves the map itself; nether-void
+      # serves Classic Skyblock's Nether mirror.
+      overworld-void: 1
+      nether-void: 1
+      # How long to wait, in ticks, before building a replacement for a world just taken from the pool.
+      # Replenishment is triggered the instant a world is handed out — which is the instant a match is
+      # starting — so generating the replacement immediately puts a world-thread stall on the exact tick
+      # the player is joining. 100 ticks (5s) moves that cost into the quiet gap afterwards. Set 0 to
+      # rebuild immediately (the old behaviour).
+      replenish-delay-ticks: 100
+    # Legacy single pool size. Still honoured as the Overworld target when pool.overworld is unset.
+    pool-size: 5
+    # ---- where a new world starts -----------------------------------------------------------------
+    # A new world's spawn is pinned rather than searched for, because Minecraft's own spawn search
+    # generates chunks on the server thread and is half of what makes creating a world a multi-second
+    # freeze. The cost of that shortcut was landing on whatever happens to be at (0, 0) in a random seed —
+    # very often open ocean, which is how players ended up spawning in the middle of the sea.
+    #
+    # So the spawn is chosen from the world's BIOME SOURCE instead: no chunks are generated, so the search
+    # can afford to look far enough to actually leave an ocean. For a pooled world this runs at boot with
+    # nobody waiting, and the chosen spawn travels with the world when it is handed to a player.
+    land-spawn:
+      enabled: true
+      # How far out to look for habitable land, in blocks. Oceans are large; a small radius finds nothing
+      # and falls back to the pinned origin. The search itself reads the biome source and generates
+      # nothing, so a big number is cheap; the one chunk needed to learn the ground height at the chosen
+      # column is loaded asynchronously, off the server thread, and the spawn moves when it arrives.
+      search-radius: 6400
+    # Prefix shared by every leased world folder.
+    name-prefix: "sexidium_temp_"
+    # When true, configured mode world names are ignored and every mode runs in its leased world.
+    force-mode-worlds: true
+    # Diameter of the global world border used as the map limit.
+    world-size: 750
+    # Allow player-vs-player damage in minigame/experience worlds. MUST be true for fighting modes
+    # (Combat, TNT War, Fugitive, Gather-and-Duel's duel) — Bukkit worlds default to pvp=false, which
+    # silently blocks all PvP at the world level before the game logic runs.
+    pvp: true
+    warning-distance: 20
+    damage-per-block: 0.2
+    difficulty: NORMAL
+    # Spawn-area chunks generated gradually so world creation has visible boss-bar progress.
+    preload-radius-chunks: 6
+    chunks-per-tick: 4
+    cleanup-stale-on-start: true
+    delete-on-release: true
+    # Runtime GC reclaims disposable temp worlds that no active or reconnect-pending match owns. It
+    # unloads loaded orphan worlds, evacuates stragglers to lobby when possible, and deletes disk-only
+    # folders left by crashes or failed cleanup. Persistent experience worlds and the lobby are excluded.
+    gc:
+      enabled: true
+      initial-delay-seconds: 300
+      period-seconds: 300
+    # Flush a leased temp world's chunks to disk incrementally WHILE the match runs (instead of only on
+    # server shutdown), so its data lands in world/dimensions/<temp.namespace>/<short>/ during play and a
+    # reconnectable match's world stays current on disk. Disable to skip the I/O for purely throwaway worlds.
+    auto-save: true
+  # Persistent, player-owned experience worlds. Created on demand when a player runs
+  # /sx start experience <challenges...>. On MC 26.1+ each experience is a namespaced custom dimension at
+  # world/dimensions/<experiences.namespace>/<owner-nick>/<map-name>_<id>, e.g.
+  # world/dimensions/experiences/ashu11a/diamond_hunt_ab12cd34. The Paper backend creates them with a
+  # native keyed WorldCreator (experiences:<nick>/<map>_<id>) and imports them into Multiverse-Core for
+  # /mv tooling; the per-experience metadata/state (state.yml + player snapshots) lives in that same
+  # dimension folder. NEVER recycled by the temp pool and NEVER auto-deleted — a map is only removed when
+  # its owner deletes it in the experience GUI (or is banned). Always played in survival.
+  experiences:
+    # Dimension namespace (first path element under world/dimensions/). Forward slashes in each map's key
+    # produce the <nick>/<map>_<id> sub-directories.
+    namespace: "experiences"
+    # Legacy folder name retained for the NeoForge folder-based backend and tooling.
+    subdir: "experience"
+    # Maximum number of experience worlds a single player may own at once. Creating another beyond
+    # this cap is rejected until the player deletes one (/sx experience delete <id>, or the Delete
+    # button in the My Experiences GUI). NOTE: an already-generated config.yml on a live server keeps
+    # its old value — bump it there too (or delete the file to regenerate) if the in-game cap looks stale.
+    max-per-player: 10
+    # Maximum number of BACKUPS one experience may keep. A backup is a full, independent copy of the
+    # world (all three dimensions, every player's saved inventory/XP/position and every challenge
+    # counter) that lives in "My Experiences" as an experience of its own — which is why restoring is
+    # simply entering it. Backups do NOT count against max-per-player, but reaching this cap refuses
+    # the next one: nothing is ever auto-deleted to make room. 0 turns backups off entirely.
+    max-backups-per-experience: 3
+    # Whether a BACKUP / REFRESH / DUPLICATE may copy a world while people are inside it. Default true.
+    #
+    # The risk, stated plainly: there is no save barrier on this platform. World.save() hands the dirty
+    # chunks to an async writer and returns, so the folder being read can still be mid-write. The copy
+    # is therefore VERIFIED rather than trusted -- the source is flushed first, every folder is copied
+    # inside a before/after inventory bracket (size + nanosecond mtime, so even a one-byte counter
+    # rewrite is seen), a source that moved is copied again up to 3 times, and a source that keeps
+    # moving ends the whole verb FAILED with nothing published and nothing recorded. What you are
+    # accepting by leaving this true is that a backup of a busy world may not happen; what you are NOT
+    # accepting is a backup that quietly is not the world it claims to be.
+    #
+    # Set false to restore the old behaviour: the three copy verbs answer BUSY while the source world
+    # (or any of its dimensions) is open or holds a live match, and the owner has to leave first.
+    #
+    # RESTORE IS NEVER COVERED BY THIS, either way. It refuses a busy world on both sides always,
+    # because it re-points the world_key a running match is already bound to and no verification could
+    # catch that afterwards. Nor is the DELETE at the end of a refresh: removing a folder somebody is
+    # standing in is data destruction with no undo, and it stays strict on this node and across the
+    # fleet regardless of what is set here.
+    allow-live-copy: true
+    # A copy is REFUSED before it starts when the node holding the folder does not have room for it:
+    # the tree is measured, and the copy must fit with 512 MB of headroom left over. Refusing cleanly
+    # ("there is no room on the server") is the point -- a disk that fills mid-copy surfaces as the same
+    # opaque "the copy could not be finished" a torn read does, which sends the owner looking for a
+    # fault instead of deleting a backup. Nothing here is configurable on purpose: the margin is about
+    # the server being able to write its own logs, not about a policy.
+    #
+    # Note also that a REFRESH is a full re-copy, not an incremental one. The new copy lands beside the
+    # old one and the old folder is only removed once the row names the new one, so a refresh needs room
+    # for both at once. There is no incremental backup here and there will not be: mtime-skip is
+    # silently wrong on a same-length rewrite, hashing reads every byte it saves writing, and hard links
+    # are actively unsafe because Minecraft rewrites region files IN PLACE -- a hard-linked "backup"
+    # changes while you play. The host filesystem is ext4, which has no reflink support either.
+    # When true, a NON-owner (friend / party member / anyone entering a public experience) may only enter
+    # an experience while its owning host is online; if the host is offline the entry is refused. Owners
+    # always enter their own worlds regardless. Default false: experience worlds are persistent and meant
+    # to be enterable any time, so this stricter rule is opt-in.
+    require-owner-online: false
+    # Experience world-border diameter in blocks. 0 (default) = NO border: experiences are borderless so
+    # the vanilla seed-generated stronghold + End portal is reachable and per-experience Nether/End work
+    # off the real portals. Set a positive value to re-impose a border. Temp/minigame worlds use
+    # worlds.temp.world-size, unaffected.
+    world-size: 0
+
+# ============================================================
+# Lobby world/NPC bundle. A world + NPC settings can be embedded into the plugin jar at build time:
+#   ./gradlew build -PlobbyWorldZip=assets/worlds/lobbies/Medieval-BreadBuilds.zip -PlobbySettingsDir=test/paper/plugins/Sexidium
+#   (or -PlobbyWorldDir=<world folder> to embed a folder instead of a zip)
+#   The zip may nest the world under a wrapper folder ("My Map/level.dat") — the build strips it.
+# The embedded bundle is used automatically when the lobby world does not yet exist, gated by
+# worlds.lobby.create-if-missing above — there is no separate apply flag. An existing lobby is never
+# overwritten; delete the lobby world to re-seed it from the bundle.
+# ============================================================
+# HUD driver — how a mode's own on-screen readout gets drawn.
+#
+# Challenges and game modes DECLARE a surface (rows of text, bars, a toast) in code; a driver decides
+# where it lands. There are two, and they are stacked rather than chosen between:
+#
+#   BetterHud (Paper, optional softdepend) draws a free-floating surface in a screen corner. It is the
+#     only way to put text anywhere Minecraft has no vanilla surface for.
+#   The scoreboard sidebar draws the same declaration as lines, and always works.
+#
+# Sexidium picks PER PLAYER, every frame: whoever BetterHud is actually reaching gets the corner,
+# everyone else gets the sidebar. That is not a fallback for broken servers — it is the ordinary case,
+# because BetterHud rides boss bars, which Geyser does not render and which BetterHud itself switches
+# off for Bedrock players. A Java player and a Bedrock player in the same match see the same readout in
+# two different places, and neither sees it twice.
+#
+# So there is nothing to lose by leaving the driver off, and nothing to configure to get a readout.
+# ============================================================
+hud:
+  # How often every HUD repaints, in ticks. 20 = once a second.
+  #
+  # This is the shared default for the experience/Chaos HUD, the lobby card, the team card, the Race
+  # board, TNT War's board and every declared surface. A mode may still override it with its own
+  # refresh-ticks key (Race ships one, because a scavenger board genuinely wants to feel immediate);
+  # remove that key and the mode follows this one.
+  #
+  # Faster does not make a countdown smoother — a timer printed in whole seconds cannot be, and the
+  # BetterHud driver publishes to a plugin that redraws every tick on its own thread regardless. What
+  # it buys is how quickly an OFF-cadence change shows up: a death, a captured objective, a reset.
+  #
+  # The scoreboard sidebar is repainted on the server thread, because the scoreboard API may not be
+  # touched from anywhere else, so very low values here cost main-thread time in proportion to the
+  # number of players. The BetterHud path has no such limit — it renders and publishes off-thread.
+  refresh-ticks: 20
+
+  betterhud:
+    # Master switch. ON BY DEFAULT: this server ships pinned to a Minecraft version BetterHud's newest
+    # shader overlay genuinely covers, and the top-left corner readout (Death Resets' played/days/resets)
+    # is the whole reason for that pin — vanilla has no surface that can draw text there.
+    # Nothing happens when BetterHud is not installed: the driver reports no capabilities and every
+    # declared surface renders on the scoreboard sidebar, which is what every Bedrock player already gets.
+    #
+    # WHAT THIS SWITCH IS PROTECTING YOU FROM, if you move off the pin:
+    # BetterHud does not draw its HUD with text and textures alone. The resource pack it builds and
+    # sends REPLACES the client's vanilla core text shaders — that is how it moves glyphs to arbitrary
+    # screen positions. Which shader set it sends is chosen from a HARDCODED table of pack-format
+    # ranges inside the plugin, and that table claims a far wider range than the shaders it ships
+    # actually cover. On a Minecraft version inside the claim but outside the reality, the plugin loads
+    # fine, accepts our layouts fine, and the client renders the readout as a row of unknown-character
+    # boxes — with vanilla GUI text mis-coloured or missing beside it, because every piece of GUI text
+    # goes through that same shader.
+    #
+    # With this ON, capability-probe below is the protection that remains: it detects that case and takes
+    # Sexidium out of it. Do NOT switch the probe off on a version you have not diffed against the
+    # overlay. The probe cannot take BetterHud out of it: the plugin sends its own pack regardless of
+    # what Sexidium does with it.
+    # IMPORTANT: switching this off stops SEXIDIUM using BetterHud; it does not stop BetterHud sending
+    # its own pack. If you still see corrupted text, REMOVE THE PLUGIN — that is the only complete fix.
+    enabled: true
+
+    # Generate the yml for every declared surface into plugins/BetterHud/{texts,layouts,huds,popups}
+    # /sexidium/, and empty BetterHud's `default-hud:` list, which ships as [test_hud] — its bundled
+    # DEMO hud, the animated health/hunger bars every player would otherwise wear everywhere.
+    #
+    # The sexidium/ subfolder is generated and OWNED: it is rewritten to match the declarations on every
+    # boot and files for surfaces that no longer exist are deleted. Nothing outside it is ever touched,
+    # so your own huds and layouts are safe — and unlike the hand-installed files this replaces, ours
+    # are never stale. BetterHud is reloaded only when something actually changed.
+    #
+    # Turn off to manage BetterHud entirely by hand; declared surfaces then fall back to the sidebar.
+    manage: true
+
+    # Show a player nothing except the surfaces Sexidium asked for, and nothing at all when it has
+    # asked for none (the lobby, a minigame with no declared surface). Re-applied on a short timer
+    # because BetterHud re-adds its own defaults whenever it rebuilds a player. Every removal is
+    # bounded by the `sexidium_` id prefix, so your own huds are never candidates.
+    # Turn off to run your own huds alongside Sexidium's.
+    exclusive: true
+
+    # Rename BetterHud's own demo objects out of the way (a leading hyphen, which is BetterHud's
+    # documented "skip this file" convention) so it stops loading them at all:
+    #   huds/default-hud.yml          the animated health/armor/hunger bars
+    #   compasses/default_compass.yml the direction bar — it carries `default: true` INSIDE the file, so
+    #                                 emptying `default-compass` in BetterHud's config does not stop it
+    #   popups/entity-popup.yml       the "Health: x // y" readout when you hit a mob — trigger-driven,
+    #                                 so removing it per player cannot stop it either
+    # Files are moved, never deleted, and never over an existing hyphen-prefixed file. To bring one
+    # back: rename it (drop the '-') and set this to false. Requires manage: true.
+    disable-demo-assets: true
+
+    # Check that BetterHud's shaders actually cover this server's Minecraft version before drawing
+    # through it, and log why if they do not. When the check fails, every declared surface renders on
+    # the scoreboard sidebar instead — which is legible — rather than in a corner as white boxes.
+    # Turn off only if you have verified your BetterHud build is correct for your version and the
+    # check is wrong about it.
+    capability-probe: true
+# Lobby HUD — a per-player scoreboard shown to players in the lobby (not in a match): plugin name,
+# total players online, the player's ping, and their online friends.
+# ============================================================
+lobby:
+  hud:
+    enabled: true
+    # Omit to follow hud.refresh-ticks. This used to ship at 40 (two seconds), which is where the
+    # lobby's ping and player count visibly lagged behind reality.
+    refresh-ticks: 20
+    max-friend-lines: 5
+  # Lobby NPCs (dummies). Each is one file under plugins/Sexidium/fakeplayers/<id>.yml with:
+  # id, world, x/y/z, yaw/pitch, skin (a player name to copy the skin from), name (MiniMessage),
+  # click-command (run as the clicking player), follow-player-head, and a hologram: list whose lines
+  # support %players_total% and %players_<modeId>% placeholders. Manage in-game with /sx npc.
+  npcs:
+    enabled: true
+    hologram-refresh-ticks: 40
+
+# ------------------------------------------------------------
+# DEPRECATED: legacy temporary-worlds keys.
+# The plugin reads worlds.temp.* and only falls back to the values
+# below when worlds.temp.<key> is absent. This block is removed in
+# the next minor release; please migrate.
+# ------------------------------------------------------------
+temporary-worlds:
+  enabled: true
+  pool-size: 3
+  name-prefix: "sexidium_temp_"
+  force-mode-worlds: true
+  world-size: 750
+  warning-distance: 20
+  damage-per-block: 0.2
+  difficulty: NORMAL
+  preload-radius-chunks: 6
+  chunks-per-tick: 4
+  cleanup-stale-on-start: true
+  delete-on-release: true
+
+# ============================================================
+# Global gameplay defaults shared by EVERY game mode (all minigames and experiences). A mode only needs
+# to set one of these keys under its own section to diverge; otherwise it inherits the value here, so
+# common settings live in exactly one place instead of being repeated per mode.
+# ============================================================
+game:
+  # Frozen countdown (seconds) before fighting/objectives are enabled when a match starts.
+  warmup-seconds: 5
+  # Whether players may damage each other (modes with teams additionally disable damage between allies).
+  friendly-fire: false
+  # Kit handed out when a match starts ('' = nothing). Must match a key under 'kits:'.
+  starter-kit: ''
+
+# ============================================================
+#  Minigames — standalone competitive game modes
+#  Start with:  /sx start minigames <mode>
+# ============================================================
+minigames:
+
+  # ------------------------------------------------------------
+  # IDEA 1 - Race for the item: first player to obtain all three selected targets wins.
+  # ------------------------------------------------------------
+  race:
+    # Optional hand-built maps. Leave empty to roll each race onto a freshly generated world (default);
+    # list {id, world} entries (world = a template folder under the world root) to clone one per match.
+    maps: []
+    # A round is 3 targets whose difficulty mix is rolled at random (never two hard ones): e.g. two
+    # easy + one medium, or two medium + one hard. Easy targets default to EVERY ore; medium/hard add
+    # tougher items and (optionally) STRUCTURE objectives - reach a structure that spawns into the map.
+    targets:
+      easy:
+        # Items collected to clear an easy target. Empty list = all ores (built-in pool).
+        # One item per difficulty: a single item of the tier clears its target.
+        amount: 1
+        points: 1
+        items: []
+      medium:
+        amount: 1
+        points: 3
+        items: []
+      difficult:
+        amount: 1
+        points: 5
+        items: []
+    # Structure objectives: a medium/hard target may instead be "reach this structure's zone". Per-tier
+    # lists override the built-in pools; leave empty to use the defaults. Easy never uses structures.
+    structures:
+      enabled: true
+      # Probability (0-1) that an eligible medium/hard target becomes a structure instead of an item.
+      chance: 0.5
+      # How far from spawn a structure spawns, and how close you must get to clear it.
+      min-radius: 200
+      max-radius: 900
+      zone-radius: 10
+      # A visible marker tower stands at the structure so its zone is findable on any platform.
+      marker-block: minecraft:sea_lantern
+      marker-height: 12
+      medium: []
+      difficult: []
+    display:
+      # Shows the selected targets in a server-side scoreboard table on the right side.
+      enabled: true
+      # Vanilla item names render as translatable components in each player's client language.
+      refresh-ticks: 10
+    # Wipe everyone's inventory when the race starts.
+    clear-inventory: true
+    # starter-kit inherited from the global game: section (override here to diverge).
+    # Remove the temp world's border so players may roam freely (far structures, Nether/End, the dragon).
+    remove-world-border: true
+    # Race time limit in seconds. 3600 = 1 hour. Set 0 to disable the timer.
+    duration-seconds: 3600
+    # If true, the highest-scoring untied player/team wins when the timer expires (and no overtime).
+    timeout-awards-leading-player: true
+    # When time runs out, hold a vote to extend by another hour. Majority yes (and a quorum of voters)
+    # continues; otherwise the race ends and points are awarded. Vote with /sx race vote yes|no.
+    overtime:
+      enabled: true
+      vote-seconds: 300
+      extension-seconds: 3600
+      max-extensions: 24
+    teams:
+      # In team play a random leader is picked per team; switching INTO a team is closed until that
+      # team's leader runs /sx race allow on. Set true to open switching from the start.
+      allow-switch-by-default: false
+
+  # ------------------------------------------------------------
+  # IDEA 2 - Gather & Duel: shrink the world to a barrier, give everyone
+  # time to gather, then teleport them all into a duel.
+  # ------------------------------------------------------------
+  gather:
+    border:
+      # Centre the barrier on the world spawn. If false, uses center-x / center-z.
+      use-world-spawn: true
+      center-x: 0
+      center-z: 0
+      # Diameter (in blocks) of the playable area.
+      size: 500
+      warning-distance: 15
+      damage-per-block: 0.2
+    # Seconds to gather resources (3600 = 1 hour).
+    gather-seconds: 3600
+    # Allow players to fight each other while gathering.
+    pvp-during-gather: false
+    # starter-kit inherited from the global game: section (override here to diverge).
+    duel:
+      # FFA = free-for-all last-player-standing. ONE_VS_ONE = 1v1 ladder tournament.
+      format: FFA
+      # Heal & feed everyone right before the duel starts.
+      heal: true
+      # warmup-seconds inherited from the global game: section (override here to diverge).
+      # Time limit of the duel / of each 1v1 match (0 = no limit).
+      duration-seconds: 300
+      arena:
+        # Leave 'world' blank AND 'spawns' empty to PROCEDURALLY build a clean duel platform into the
+        # generated match world (the "duel map" complementing the random gather world). Set a world +
+        # spawns to use a hand-built arena instead.
+        world: ''
+        # FFA: players are spread across these spawns. 1v1: first two entries are the corners.
+        spawns: []
+        # Used only when 'spawns' is empty and 'world' is blank: the auto-generated duel arena.
+        generated:
+          enabled: true
+          radius: 12
+          floor-block: minecraft:smooth_stone
+          wall-block: minecraft:stone_bricks
+          wall-height: 3
+
+  # ------------------------------------------------------------
+  # IDEA 3 - TNT War: Red vs Blue base-destruction war on cloned maps.
+  #   Each match clones one configured map into a temporary world. Win by destroying
+  #   'win-destruction-percent' of the enemy base or by emptying their shared lives.
+  #   Build the base layout in the map world with: /sx admin map tntwar <id> corner red|blue 1|2
+  #   and /sx admin map tntwar <id> spawn red|blue   (saved to sexidium-tntwar.yml in the map folder).
+  # ------------------------------------------------------------
+  tntwar:
+    # friendly-fire + warmup-seconds inherited from the global game: section.
+    # Match time limit in seconds (0 = until one base falls / a team is wiped).
+    match-seconds: 600
+    # Players below this Y die (and respawn while their team still has lives).
+    void-level: 0
+    # Shared lives per team. When a team runs out, its players are out for good.
+    lives-per-team: 20
+    # % of the enemy base that must be destroyed to win outright.
+    win-destruction-percent: 75
+    # How often (ticks) the destruction percentage + HUD refresh.
+    refresh-ticks: 20
+    # Cap on cells sampled per base when measuring destruction (large bases are stride-sampled).
+    max-scan-blocks: 40000
+    # TNT handed to every player at the start, plus flint and steel to light it.
+    tnt-amount: 64
+    give-flint-and-steel: true
+    # Placing a TNT item spawns primed (auto-igniting) TNT - throw-and-run style.
+    auto-prime: true
+    prime-fuse-ticks: 40
+    # Item ids treated as TNT: auto-primed on place AND fed into dispensers. Add modded TNT here.
+    custom-tnt-ids: [ minecraft:tnt ]
+    # The item placed in the last hotbar slot; right-clicking it opens the build GUI.
+    build-menu-item: minecraft:chest
+    # Build-palette items never run out while the war is on (placing one is refunded).
+    infinite-blocks: true
+    # The dispenser id - placed dispensers self-stock with TNT and cannot be opened.
+    dispenser-id: minecraft:dispenser
+    lock-tnt-dispensers: true
+    # Every block/item offered in the build GUI (all freely usable for machines).
+    build-palette:
+      - minecraft:stone_bricks
+      - minecraft:stone_brick_stairs
+      - minecraft:ladder
+      - minecraft:oak_trapdoor
+      - minecraft:oak_fence
+      - minecraft:stone_pressure_plate
+      - minecraft:stone_slab
+      - minecraft:piston
+      - minecraft:sticky_piston
+      - minecraft:lever
+      - minecraft:dispenser
+      - minecraft:stone_button
+      - minecraft:redstone
+      - minecraft:redstone_torch
+      - minecraft:repeater
+      - minecraft:redstone_block
+      - minecraft:sand
+      - minecraft:slime_block
+      - minecraft:tnt
+      - minecraft:water_bucket
+      - minecraft:diamond_pickaxe
+      - minecraft:diamond_axe
+      - minecraft:diamond_shovel
+      - minecraft:minecart
+      - minecraft:lava_bucket
+      - minecraft:emerald
+    # Maps cloned into a fresh world per match. 'world' is the template world folder under the world
+    # root; its sexidium-tntwar.yml (set via /sx admin map tntwar commands) defines the red/blue bases + spawns.
+    # Leave this list empty to PROCEDURALLY build two opposing bases into a freshly generated world
+    # instead (see 'generated' below) — so a war always has defined Red/Blue sides without a hand-built map.
+    #
+    # The three entries below are bundled map worlds shipped in the jar (assets/worlds/tntwars) and
+    # auto-extracted into <world-root>/tntwar/<id> on first startup (worlds.map-bundle above). They ship
+    # WITHOUT a sexidium-tntwar.yml, so until you define each map's Red/Blue bases + spawns — via
+    #   /sx admin map tntwar <id> corner red|blue 1|2  +  /sx admin map tntwar <id> spawn red|blue
+    # or the in-world editor  /sx admin map edit tntwar <id>  — TNT War falls back to generated bases on them.
+    maps:
+      - { id: tnt-wars,           world: tntwar/tnt-wars }
+      - { id: plains-tnt-wars-v2, world: tntwar/plains-tnt-wars-v2 }
+      - { id: summer-tntwars,     world: tntwar/summer-tntwars }
+    # Used when no ready map is configured/available: auto-build two symmetric, destructible team bases
+    # into the generated match world. 'separation' is the distance between the two bases.
+    generated:
+      enabled: true
+      separation: 80
+      base-width: 9
+      base-height: 5
+      base-block: minecraft:bricks
+      platform-block: minecraft:stone
+
+  # ------------------------------------------------------------
+  # EXTRA - Combat item mode: kit-based free-for-all PvP on cloned arena maps.
+  #   Like TNT War, each match clones one configured arena map into a temporary world. Build the arena
+  #   in the map world, then capture the fighter spawn points in-game with:
+  #     /sx admin map combat <id> spawn   (run once per spot — fighters are spread across every captured point)
+  #     /sx admin map combat <id> clear   (wipe a map's spawns)   /sx admin map combat list   (show maps + spawn counts)
+  #   The points are saved to sexidium-combat.yml inside the map folder (the same flat sidecar TNT War
+  #   uses for its bases), so the config below only NAMES the maps — their geometry lives with the world.
+  # ------------------------------------------------------------
+  combat:
+    # Kit everyone receives (key under 'kits:').
+    kit: default
+    # warmup-seconds inherited from the global game: section (override here to diverge).
+    duration-seconds: 300
+    # Arena maps cloned into a fresh world per match. 'world' is the template world folder under the world
+    # root; its sexidium-combat.yml (set via /sx admin map combat commands) defines the fighter spawn points. Leave
+    # this list empty to PROCEDURALLY build a spread fighting arena into a freshly generated world instead
+    # (see 'generated' below) — so Combat always has at least one playable map without a hand-built one.
+    maps: []
+    # Used when no ready map is configured/available: auto-build a flat ring arena into the generated match
+    # world so fighters spawn spread around its rim instead of stacked on the raw world spawn.
+    generated:
+      enabled: true
+      radius: 14
+      floor-block: minecraft:smooth_stone
+      wall-block: minecraft:stone_bricks
+      wall-height: 3
+
+  # ------------------------------------------------------------
+  # THE FUGITIVE - time-limited manhunt. One random player flees with a head start
+  # while the hunters watch a server-side cinematic, then chase with a tracking
+  # compass. Start with:  /sx start minigames fugitive
+  #   The fugitive wins by staying alive until the hunt timer expires.
+  # ------------------------------------------------------------
+  fugitive:
+    # Free-roam head start for the fugitive, in seconds. 150 = 2 minutes 30 seconds.
+    head-start-seconds: 150
+    # Hunt time limit, in seconds. 1200 = 20 minutes. When it expires the fugitive survives and wins.
+    hunt-seconds: 1200
+    # Optional hand-built maps. Leave empty to run each manhunt on a freshly generated world (default);
+    # list {id, world} entries (world = a template folder under the world root) to clone one per match.
+    maps: []
+    # Kit handed to the fugitive at the start ('' = nothing). Must match a key under 'kits:'.
+    fugitive-kit: fugitive
+    # Kit handed to each hunter when the hunt begins ('' = nothing).
+    hunter-kit: hunter
+    # Wipe each hunter's inventory when the hunt begins (so they start with only the tracker).
+    clear-hunter-inventory: true
+    # Give each hunter a compass that always points at the fugitive.
+    give-tracking-compass: true
+    # friendly-fire inherited from the global game: section (override here to diverge).
+    # Where hunters spawn when the hunt begins: fugitive-origin (where the fugitive started) or world-spawn.
+    hunter-start: fugitive-origin
+    # Seconds between spear dashes. Applies to both the fugitive and hunters.
+    dash-cooldown-seconds: 8
+    # Velocity multiplier for the spear dash (higher = farther). Typical range 1.5–4.0.
+    dash-strength: 2.5
+    # Server-side cinematic shown to the hunters during the head start (no client mods required).
+    # It plays an edited sequence of varied shots (static tripod, handheld shake, close/wide orbit,
+    # crane, low-angle, follow, push-in) joined by hard cuts or smooth/dolly transitions.
+    cinematic:
+      enabled: true
+      # Base orbit radius / height (blocks). Smaller radius = closer, more intimate framing.
+      radius: 4.0
+      height: 2.5
+      # The camera never gets closer than this to the fugitive when avoiding blocks.
+      min-distance: 1.5
+      # Radians the camera advances around the fugitive each tick (lower = slower, calmer rotation).
+      orbit-speed: 0.012
+      # Position follow smoothing 0..1 (lower = smoother, more trailing). Shaped by the easing curve.
+      smoothing: 0.12
+      # Aim smoothing 0..1 (lower = smoother camera rotation toward the focus point).
+      look-smoothing: 0.18
+      # How quickly the camera's tracked facing follows the fugitive's look 0..1.
+      # Lower = smoother turns when the fugitive changes direction; 1.0 = instant.
+      target-smoothing: 0.2
+      # Maximum speed (blocks per second) the camera's framing center uses to chase the fugitive.
+      # The center trails behind instead of sticking to the player, which keeps motion fluid and
+      # prevents jitter when a watched player lags or rubber-bands. Lower = more cinematic trailing.
+      follow-speed: 6.0
+      # Handheld camera shake amount (blocks). 0 disables it (default).
+      # When > 0 it is applied at full strength on STATIC_SHAKE shots and much fainter elsewhere.
+      shake-intensity: 0.0
+      # How long each shot holds, in seconds (a random value between these). Longer = more cinematic.
+      shot-min-seconds: 4.0
+      shot-max-seconds: 7.0
+      # Length of a smooth/dolly transition between shots, in seconds.
+      transition-seconds: 0.9
+      # Chance (0..1) a shot change is a hard cut; otherwise it is a smooth or dolly move.
+      cut-chance: 0.35
+      # Transition interpolation curve: LINEAR, SMOOTHSTEP, SMOOTHERSTEP, SINE, QUAD, CUBIC, QUART, EXPO.
+      easing: SMOOTHERSTEP
+      # Freeze chat for players watching the cinematic.
+      block-chat: true
+      # --- Bedrock (Geyser) tuning (Java players are unaffected) ---
+      # Bedrock spectator mode uses a narrower effective FOV; these push the camera outward/upward.
+      geyser-radius-multiplier: 1.85
+      geyser-height-multiplier: 1.45
+      # Handheld shake scale for Bedrock only. 0 = no shake (recommended for mobile).
+      geyser-shake-multiplier: 0.0
+      # How quickly each Bedrock viewer's camera catches up to the target each tick (0.05..1).
+      # Lower = smoother motion and less jitter from per-tick teleports; higher = snappier.
+      geyser-teleport-smoothing: 0.28
+
+# ============================================================
+#  Experiences — composable challenge twists (the famous challenge idea), run inside experiences.
+#  Start with:  /sx start experience <challenges...>
+#  Browse all modes in-game with: /menu
+# ============================================================
+experiences:
+  common:
+    # Prepare participants with full health and survival mode at start.
+    prepare-players: true
+    # Clear the player's (lobby) inventory on entry so lobby items never leak into an experience; the
+    # player's SAVED experience inventory is then restored. Set false only to let players carry items in.
+    clear-inventory: true
+    # Kit handed out when an experience starts ('' = nothing).
+    starter-kit: ''
+    # Move players to their current world's spawn when a mode starts.
+    teleport-to-world-spawn: false
+    # 0 = run until /sx admin stop. Individual modes can override this.
+    duration-seconds: 0
+    announce-descriptions: true
+    release-players-on-stop: true
+    # How often (ticks) the unified center-right experience HUD repaints (every challenge's live info
+    # is shown on one panel). Lower = snappier, costlier; a scoreboard rebuild every tick flickers.
+    hud-refresh-ticks: 20
+    # WORLD INTEGRITY: blocks no challenge may ever destroy or replace, checked in one place for every
+    # mode that touches blocks (replication copies, break-all sweeps, chunk rewrites, walking trails).
+    # Without this a challenge can make a world unbeatable — the End portal frame being the obvious case.
+    # Leave the list out entirely to keep these defaults; setting it REPLACES them.
+    # Everything not listed stays destructible: burying or erasing what you needed is the mode working.
+    # NOTE this governs CHALLENGE-driven edits only — a player can still break their own chest by hand.
+    # Colour/material variants are matched by family (any *_shulker_box, any *_chest), so a variant is
+    # covered whenever its family is listed here and never when it is not.
+    protected-blocks:
+      # The world's floor and the invisible walls a map may rely on.
+      - bedrock
+      - barrier
+      - light
+      - structure_void
+      # The way out. Losing any of these can make a world literally unbeatable.
+      - end_portal
+      - end_portal_frame
+      - end_gateway
+      - reinforced_deepslate
+      # Admin/structure blocks: never a challenge's business.
+      - command_block
+      - chain_command_block
+      - repeating_command_block
+      - structure_block
+      - jigsaw
+      # Storage. Destroying terrain is the mode working; destroying a chest takes the player's THINGS
+      # with it. Remove these if you want sweeps to eat containers too.
+      - chest
+      - trapped_chest
+      - ender_chest
+      - barrel
+      - shulker_box
+    # How often (ticks) each player's position+inventory is autosaved to the experience's player file,
+    # so a hard crash loses at most this window (disconnect/leave still save immediately). 600 = 30s.
+    autosave-ticks: 600
+    # How long (ticks) the run's played-time counters may sit in memory before being written to the
+    # experience's state file. Time is ACCRUED every second regardless; this is only how often it is
+    # committed, because a file write per second for the whole life of an open-ended run buys nothing.
+    # A hard crash loses at most this window; a normal stop loses none of it. 100 = 5s.
+    stats-commit-ticks: 100
+    # ---- world regeneration (Death Resets) --------------------------------------------------------
+    # How long players stand frozen in the world they lost while its replacement is prepared alongside it.
+    # The countdown is cover for that work, not a delay for its own sake: the new world is normally handed
+    # over from the warm pool within a tick, and the seconds are what let the teleports land before the
+    # old world is deleted.
+    reset-countdown-seconds: 5
+    # Escape hatch. While a world is being replaced it is FROZEN: nothing can be broken, dropped, hit or
+    # crafted in it. If a step fails in a way nothing anticipated, this is how long before the freeze is
+    # lifted anyway and everyone is left in the world they were already in — a world frozen forever is
+    # worse than any wrong outcome the regeneration itself could produce. 600 = 30s.
+    reset-timeout-ticks: 600
+    # One-per-second passes spent waiting for the old world to actually empty before deleting it. A
+    # teleport is asynchronous, so at the moment players are moved they are all still standing in it.
+    reset-delete-attempts: 15
+    # How long (ticks) a player is invulnerable after landing in a regenerated world. A reset strips them
+    # to nothing — no armour, no food, no tools — and drops them into a fresh HARD-difficulty hardcore
+    # world, where a mob or a fall can kill them before they can act. That death would trigger another
+    # reset, and the run would loop. This is the grace to orient and start gathering; it lapses on its own
+    # and they then take damage normally. 100 = 5s.
+    reset-grace-ticks: 100
+    # ---- players nobody is driving ----------------------------------------------------------------
+    # A client that freezes leaves the player standing in the world as a live, killable body. In a mode
+    # where one death destroys everyone's world that is not an inconvenience, it is the whole run: a
+    # fifty-five-day world was lost to a thirty-second network stall, because the victim died 27 seconds
+    # INTO the freeze and 3 seconds BEFORE the disconnect the server could have reacted to.
+    # Off restores exactly the old behaviour, including that outcome.
+    downed-protection: true
+    # Seconds with NO INPUT from a client before the player is treated as not in control of their own
+    # character: they cannot be hurt, and hostiles lose interest, until they act again.
+    #
+    # This is vanilla's "last action time" -- the clock behind player-idle-timeout -- so one number
+    # covers lag, a frozen client, a dying connection AND somebody who walked away. Ping does NOT work
+    # here: it is a rolling keep-alive average that FREEZES at its last healthy value when a client goes
+    # silent instead of climbing, so a stalled player still reads as 40ms.
+    #
+    # Must stay well under the proxy's read timeout (Velocity's default is 30s) or the disconnect beats
+    # the detector to it, which is the failure this whole block exists to prevent. 8 leaves 22s of margin.
+    downed-idle-seconds: 8
+    # How often (ticks) each player's idle time is sampled. The threshold is in seconds, so finer buys
+    # nothing. 10 = twice a second.
+    downed-sample-ticks: 10
+    # How long (ticks) the protection lingers after the player is back in control. Without it, somebody
+    # rescued while standing in lava takes the whole backlog the instant their first input lands, which
+    # turns a rescue into a delayed execution. 0 = protection lifts on the very first input. 40 = 2s.
+    downed-recovery-tail-ticks: 40
+    # Radius (blocks) swept for mobs already chasing a player who has just gone quiet -- a mob that
+    # already has a target never fires another target event, so aggro acquired BEFORE the freeze has to
+    # be taken away rather than refused. 0 disables the sweep; the damage guard is the real safety net
+    # either way, and this is what stops a pile-up waiting for them when they come back.
+    downed-deaggro-radius: 32.0
+  # Server-wide consolidation of dropped item entities into a few huge stacks, so an item flood (Double
+  # Drops at a high multiplier, a Break-One-Break-All sweep) cannot bury the server in entities.
+  stack-merge:
+    enabled: true
+    # BASELINE interval (ticks) between consolidation passes, and how often the server looks for new item
+    # piles to consolidate. The pass interval is dynamic from here — see `pacing` below.
+    period-ticks: 40
+    # Dynamic pacing. A fixed interval is wrong in both directions: too eager on a quiet server, far too
+    # slow when a mode is dumping thousands of items a second. Passes therefore run at `period-ticks`
+    # while things are calm and accelerate as pressure rises, down to `min-period-ticks` in an emergency.
+    # Pressure is measured from the merge scan itself — same radius the merger works in — and counts ONLY
+    # items that have a same-type partner in that radius, so scattered or one-off items never raise a
+    # false alarm and never make the server scan faster for no reason.
+    pacing:
+      # Fastest interval, at full emergency.
+      min-period-ticks: 2
+      # Mergeable items one area can hold while still being handled at the baseline rate. This is the
+      # scale of the ramp: 64 -> 40 ticks, 128 -> 20, 256 -> 10, 1280 -> 2.
+      comfortable-items: 64
+      # Pressure at which the pass is reported as an "emergency" (debug/HUD only; the ramp is continuous).
+      emergency-items: 256
+    # Safety valve: this many ground items near a player wake consolidation in a BRAND-NEW area, even
+    # outside the sweep challenges. Below it, an area nobody has consolidated before is left alone.
+    max-ground-items: 256
+    # Constant re-validation. Every `period-ticks` the ground around each player is inspected and the
+    # merger is woken wherever there is real work — this is what stops consolidation from silently
+    # giving up on a pile (a leftover below the flood bar, or an area retired by a transient scan
+    # failure, used to be forgotten for good). An area that was recently consolidated stays WATCHED and
+    # re-wakes at the much lower `min-mergeable` bar; areas that were never busy keep the flood bar
+    # above, so ordinary survival play is untouched.
+    revalidate:
+      # Cap on how far around each player to inspect. The actual reach is that player's own render
+      # distance (shared PlayerRadius rules); this only stops a very long render distance from turning
+      # the validation sweep into a whole-world scan.
+      max-radius: 48.0
+      # How long an area stays under close observation after it was last active.
+      watch-seconds: 60
+      # Mergeable stacks that are enough to bundle. This is the bar INSIDE a match/experience world (where
+      # bundling is the point) and for any area recently consolidated; an untouched area elsewhere still
+      # needs `max-ground-items` above. Item TYPE never matters — types come straight from the game
+      # registry, so a handful of logs bundles exactly like a shower of apples.
+      min-mergeable: 2
+      # Consecutive passes with items in flight and NO progress before the merger decides the pile is
+      # stuck: it cancels those flights and merges the pile on the spot, so bundling always finishes.
+      stalled-passes: 3
+    # Stacks used to merge instantly, which read as items blinking out of existence. Instead each stack
+    # now FLIES to the pile it joins, in two stages: nearby items first gather into a local cluster
+    # (short hops, collapses the count fast), then the few surviving cluster heads travel to the one big
+    # pile (long hops, very few entities). Staging is what keeps the cost bounded when a mode drops
+    # absurd numbers of items per second.
+    animate:
+      enabled: true
+      # Hard ceiling on item entities in flight at once, across BOTH stages. This is the cost knob.
+      max-entities: 192
+      # Stage-1 cell size in blocks: how far apart two items can be and still count as "close".
+      cluster-cell: 4.0
+      # Travel speed in blocks per tick, and the distance at which a stack is absorbed by its target.
+      speed: 0.45
+      arrive-distance: 0.8
+      # Absorb anyway after this long, so a stack snagged on terrain still lands.
+      max-travel-ticks: 60
+      # Above this many items in one chunk scan the entity count IS the emergency: whatever does not fit
+      # in the budget merges instantly instead of waiting its turn. Below it, the overflow just waits.
+      instant-above-items: 400
+  modes:
+    doubledrops:
+      starting-drop-count: 1
+      # Upper bound on a single break's stack so the doubling cannot literally overflow / lag the server.
+      # Set high (1024 stacks) so the "bigger and bigger" fun is effectively unbounded in practice.
+      max-drops-per-break: 65536
+      # How long a payout AT the cap above takes to pour out of the broken block, in seconds. Smaller
+      # multipliers take a proportional share of it (with max-drops-per-break 65536: 65536 -> 10s, so
+      # 512 -> 0.078s, i.e. still instant). Streaming the item entities instead of spawning them all in
+      # one tick is what stops a huge multiplier from freezing the server. 0 = drop everything at once.
+      stream-seconds: 10
+      max-item-stack-size: 64
+      # false = one shared multiplier for the whole game. true = each player has their own multiplier.
+      per-player-multiplier: false
+
+    omnichunk:
+      # Every block you place or break happens at the SAME spot inside every other chunk. The engine keeps
+      # a Git-like HISTORY of the changes made, in order, and replays it — so a carved pumpkin capping an
+      # iron T really spawns a golem in every chunk, and TNT you lit really explodes in every chunk.
+      #
+      # Breaking copies the removal too, and squashes that spot's earlier changes: history that led to a
+      # block nobody can see any more is dead weight and replaying it would be wrong as well as slow.
+      copy-breaks: true
+      # Place the copies WITH physics and block updates, exactly as a player would: golems spawn, water
+      # and lava flow, sand falls, redstone fires, saplings check their space. Turn it off only if a very
+      # large radius plus heavy physics is hurting the server — the copies then appear inert.
+      natural-placement: true
+      # How far the copies reach. The radius follows each player's own RENDER DISTANCE, clamped to this
+      # band, so everything they can actually see stays consistent and nothing is computed for chunks
+      # nobody is looking at. The area is a CIRCLE, and a chunk on its edge is only touched when more than
+      # half of it falls inside — see the shared PlayerRadius rules.
+      min-chunk-radius: 4
+      max-chunk-radius: 32
+      # How far past the visible edge to reach, as a fraction of the render distance. A little overscan
+      # means the chunk a player is about to walk into is already correct instead of resolving in front of
+      # their eyes. 0.10 = 10% beyond.
+      overscan: 0.10
+      # Ceiling on block changes per tick while the ripple plays out. This is the lag knob.
+      blocks-per-tick: 512
+      # How often (ticks) every player's surroundings are re-checked against the log. Replication has to
+      # be CONTINUOUS: chunks stream in as players travel, and a chunk that was not loaded when its turn
+      # came must get another one — otherwise replication appears to stop at a distance. Chunks already on
+      # the latest change cost one map lookup each, so this stays cheap.
+      sync-period-ticks: 20
+      # How many changes of history are kept. Every chunk records WHICH CHANGE it has been brought up to,
+      # so a chunk you revisit is fast-forwarded with just the changes it missed rather than being replayed
+      # from scratch or skipped as "already done". A chunk so far behind that its missing changes have
+      # already been trimmed off replays everything that survives instead. Superseded changes to the same
+      # spot are squashed, so this goes a long way. The history and the per-chunk versions live in the
+      # experience's own world folder — they travel with the world, no database involved.
+      max-changes: 4096
+      # Items whose USE on a block is recorded and re-run in the copies (an event layered on the block,
+      # not a replacement for it). Anything not listed is ignored; anything the platform cannot simulate
+      # is recorded but does nothing.
+      recorded-uses:
+        - flint_and_steel
+        - fire_charge
+        - bone_meal
+      # (Protected blocks are no longer configured per challenge: the shared world-integrity list at
+      # experiences.common.protected-blocks applies to every mode, this one included.)
+
+    randomizer:
+      # Periodic reshuffle of the whole drop table. 0 = OFF (default): one genuine random mapping for
+      # the session. Set a positive number of seconds to rotate.
+      rotate-every-seconds: 0
+      # Empty = draw from EVERY item in the game's registry except excluded-items (genuine randomness).
+      item-pool: []
+      excluded-items: [AIR, BEDROCK, BARRIER, COMMAND_BLOCK, CHAIN_COMMAND_BLOCK, REPEATING_COMMAND_BLOCK, STRUCTURE_BLOCK, JIGSAW]
+      use-natural-drop-amount: false
+      fixed-drop-amount: 1
+      # true (default) = the remapped surprise item drops into the WORLD at the break location; false =
+      # straight into the breaker's inventory.
+      drop-to-world: true
+      announce-rotations: true
+
+    sharedlife:
+      starting-health: 20.0
+      max-health: 20.0
+      void-is-fatal: true
+      damage-multiplier: 1.0
+      healing-multiplier: 1.0
+      play-sounds: true
+
+    sharedinventory:
+      # Batched slot-level sync. apply-period-ticks: how often dirty players are folded into the shared
+      # model and changed slots pushed back (1 = every tick, smoothest). reconcile-period-ticks: full
+      # re-read of everyone as a safety net for any missed change.
+      apply-period-ticks: 1
+      reconcile-period-ticks: 20
+      # If all starting inventories cannot fit into one shared inventory, drop leftovers near the first participant.
+      drop-overflow-on-start: true
+
+    xphealth:
+      clear-existing-xp: false
+      starting-xp-points: 30
+      xp-per-damage-point: 4.0
+      void-consumes-all-xp: true
+      death-threshold-xp: 0
+      scale-heart-display: true
+      display-health-scale: 2.0
+      enchanting-costs-health: true
+      anvil-costs-health: true
+
+    shrinkingachievements:
+      # 0 = keep the world's current border size at mode start.
+      initial-size: 0.0
+      minimum-size: 32.0
+      shrink-blocks: 25.0
+      # 1.0 = no percentage shrink. Set 0.95, for example, to also shrink by 5%.
+      shrink-multiplier: 1.0
+      transition-seconds: 5
+      ignore-recipes: true
+      announce-shrinks: true
+      restore-border-on-stop: true
+
+    # Break a block -> that block TYPE is broken everywhere. The broken-type set is shared by all
+    # players and persisted, and every player runs a budgeted, render-distance, ball-shaped sweep that
+    # removes broken-type blocks around them (re-centred as they move).
+    breakonebreakall:
+      # Max broken-type blocks removed per player per tick (the per-tick work budget).
+      blocks-per-tick: 256
+      # Cheap-iteration cap per tick (offsets walked, including ones outside the ball) so far shells
+      # cannot stall a tick. Defaults to blocks-per-tick * 8 when unset.
+      max-iterations-per-tick: 2048
+      # Give the broken blocks back as items (false = blocks just vanish). The removals are never
+      # scattered one-entity-per-block; they are grouped first — see loot-mode.
+      drop-items: true
+      # How the grouped blocks are returned (the two optimization modes):
+      #   inventory     -> straight into the breaking player's inventory (default; loot comes to you).
+      #   chunk-stacks  -> per chunk, blocks of a type merge into uncapped ground stacks (no 64 cap)
+      #                    spread across the chunk's FOUR quadrant points, so loot looks natural.
+      loot-mode: chunk-stacks
+      # inventory mode: items per stack when filling inventory slots (64 = vanilla).
+      max-item-stack-size: 65536
+      # chunk-stacks mode: radius (blocks) the nearby-item merge optimization scans to find/grow each
+      # quadrant's existing stack. Capped at 4 so the four points stay distinct.
+      chunk-merge-radius: 4.0
+      # Sweep radius in blocks. 0 = use each player's render distance (view-distance chunks * 16);
+      # set a positive value to cap it.
+      max-radius-blocks: 0
+      play-sound: true
+
+    # Break a block -> every other block of that TYPE in the SAME chunk vanishes too (chunk-scoped
+    # cousin of break-one-break-all). One-shot per break: the chunk is swept once, no persistent set.
+    chunkbreak:
+      # Per-tick work budget (blocks removed) shared across all queued chunk sweeps.
+      blocks-per-tick: 256
+      # Cheap-iteration cap per tick (positions walked) so a tall chunk column cannot stall a tick.
+      max-iterations-per-tick: 2048
+      drop-items: true
+      # inventory -> straight into the breaker's inventory (default); chunk-stacks -> merged ground stacks.
+      loot-mode: inventory
+      max-item-stack-size: 65536
+      # radius (blocks) the nearby-item merge optimization scans before pulling loot into an existing
+      # stack — capped at 4 so swept loot stays at the triggering block instead of merging far away.
+      chunk-merge-radius: 4.0
+      play-sound: true
+
+    # Every interval a random block type is permanently deleted from the world, never to return.
+    blockdeleter:
+      interval-seconds: 60
+      # Cube half-extent (blocks) cleared around each online player when a type is deleted. Kept modest and
+      # capped by the backend (loaded chunks only, bounded block count) so a common type cannot freeze the
+      # server thread with millions of light/block updates in one tick.
+      radius: 32.0
+      # Empty = ANY block type in the game is fair game (uses the full built-in palette). List ids to
+      # restrict the deletion pool instead.
+      palette: []
+      # Never selected for deletion (would soft-lock the run).
+      protected-blocks: [bedrock, end_portal_frame, end_portal, end_gateway, barrier, command_block]
+      play-sound: true
+
+    # Every newly entered chunk has its existing blocks replaced with one random block type (locked
+    # once rolled). The WHOLE chunk is converted, floor to ceiling — air is never filled, so terrain
+    # keeps its shape and just changes material.
+    randomchunks:
+      # Empty = roll from EVERY block in the built-in palette (block, ore, glass, even tnt/water/lava).
+      palette: []
+      # Deterministic per-chunk roll seed.
+      seed: 1337
+      # Optimization: the fill starts at the player's Y layer and expands outward both up AND down to
+      # the world edges, converting this many layers per side per tick, so it never lands as a single
+      # lag spike. Lower = smoother.
+      layers-per-tick: 8
+      # Slower per-side rate used when the rolled block is destructive (lava, tnt, cactus, fire,
+      # powder_snow, ...), which are physics/damage-heavy and would otherwise cause freezes.
+      slow-layers-per-tick: 2
+      # Block ids never replaced (kept intact). Empty = the built-in default: every kind of leaf (trees
+      # keep their canopy) plus snow, grass/ferns, flowers, mushrooms and leaf litter (so a thin
+      # decorative layer is not grown into a solid block that buries the player). List ids to override.
+      blacklist: []
+      play-sound: true
+
+    # Every block you walk onto spawns a random block beneath your feet.
+    walkingblocks:
+      # Empty = use the built-in palette.
+      palette: []
+      # Only spawn when not rising (avoids deleting the floor mid-jump).
+      only-when-not-rising: true
+
+    # Players are roped together in one physical chain (player 1-2-…-n in join order), each neighbour
+    # pair joined by a short unbreakable lead. When most of the team walks the same way their strength
+    # adds and drags the stragglers along; one death kills everyone (death link).
+    chained:
+      # Rest length (blocks) of each rope link — neighbours are reeled back toward this. Keep short so
+      # the team stays close. Clamped to 8.0 max.
+      segment-length: 5.0
+      # A SLACK link (within the rest length) exerts NO force — players roam freely until the rope pulls
+      # taut, and only a taut player is ever dragged. Base reel-in force on a stretched link (× how far
+      # past the rest length it is stretched). The force eases smoothly into max-pull (tanh) so the rope
+      # feels elastic and never delivers a velocity spike. Raise to pull harder.
+      pull-strength: 0.20
+      # Spring-back / damping: inward force proportional to how fast a player moves AWAY from the rope, and
+      # a brake when they return — critically damps the link so it settles smoothly instead of bouncing.
+      # Higher = smoother (less recoil), only ever engages while the rope is taut.
+      damping: 0.6
+      # Extra shove along the group's agreed heading (teamwork = speed); scales with how many agree and is
+      # weighted toward whoever lags. Applied only to taut players.
+      drag-strength: 0.12
+      # Smooth per-tick ceiling (blocks/tick) the pull/drag eases toward, so the chain never flings players.
+      max-pull: 0.5
+      # Minimum movement (blocks/tick) for a player to count toward the group's heading.
+      move-epsilon: 0.02
+      # Snap a lagging neighbour back when a link stretches past segment-length × this (a small glide to the
+      # rope's edge, not a jump onto the neighbour). Clamped so the snap range stays sane.
+      hard-snap-multiplier: 1.7
+      # Physics tick interval. 1 = every tick = smoothest motion (small nudges); raise to lighten CPU.
+      check-ticks: 1
+      # How the rope between neighbours is drawn:
+      #   leash    = a real Minecraft lead (a leashed invisible marker per link) — a thin native rope that
+      #              does not block the view. Falls back to "particle" on platforms that cannot render leads.
+      #   particle = the legacy sagging dust line (renders on Java and Bedrock, but bows across the view).
+      rope-style: leash
+      # Draw the rope between neighbours (either style above). Physics still chains the players when false;
+      # only the visible rope is suppressed.
+      visible-rope: true
+      # Death behaviour. Default false: a chained player who dies respawns next to the player they are
+      # roped to (their chain neighbour), so the chain stays together. Set true for the alternative
+      # "shared fate" rule instead — an otherwise-fatal hit revives the WHOLE team in place at once, so
+      # nobody ever actually dies/respawns (defers to Shared Life / XP Health when those absorb the hit).
+      death-link: false
+      play-sounds: true
+
+    # Every swing hits every mob in range; tools wear out instantly.
+    cleave:
+      # Render-distance-style cleave radius (blocks): a full swing really does hit everything around.
+      radius: 72.0
+      # Full damage dealt to one random struck mob (high enough to one-shot most mobs, as the rule intends).
+      full-damage: 20.0
+      # Minimal damage dealt to all other struck mobs.
+      splash-damage: 1.0
+      # Durability drained from the held tool per swing / per break.
+      tool-durability-drain: 64
+      drain-on-break: true
+      # Real-time tracking: how often (ticks) the background scan refreshes the nearby-mob tracker, so
+      # a swing hits the already-tracked mobs instantly instead of scanning. Lower = fresher, costlier.
+      scan-period-ticks: 10
+      # Dedupe window (ms): one physical swing can arrive via two platform events; cleaves closer than
+      # this collapse into one. Keep below one tick (50ms) so genuine fast swinging still counts.
+      swing-cooldown-ms: 25
+      play-sound: true
+
+    # Every minute every player grows; bigger means stronger and tankier. NO size cap by default.
+    growing:
+      interval-seconds: 60
+      scale-increment: 0.1
+      # 0 = no maximum scale (grow forever, as the rule intends).
+      max-scale: 0.0
+      # Strength amplifier gained per this many size stages.
+      stages-per-strength: 3
+      # Hard cap on the strength amplifier. 0 = no cap (grows without bound with size).
+      max-strength-amplifier: 0
+      # Apply a resistance effect that scales with size.
+      resistance: true
+      # Hard cap on the resistance amplifier. Kept at 3 (80% reduction) so there are still some stakes;
+      # set 0 for an uncapped, eventually-invincible giant.
+      max-resistance-amplifier: 3
+
+    # Every jump enchants a random item in your inventory with a random enchantment.
+    jumpenchants:
+      # Empty = EVERY enchantment in the game is in the pool (not just a handful). List ids to restrict it.
+      enchants: []
+      # Max random level rolled per jump. High on purpose — repeated jumps stack into "number territory"
+      # (Sharpness 16, Protection 24, ...), matching the real challenge.
+      max-level: 30
+      # Minimum upward delta (blocks) between move samples to count as a jump.
+      jump-detection-y-delta: 0.4
+      jump-cooldown-ms: 400
+      play-sound: true
+
+    # When a mob takes player-caused damage, it is duplicated exactly.
+    mobduplication:
+      play-sound: true
+      # Safety cap on duplications per tick across the experience (0 = uncapped). Bounds the snowball
+      # when combined with Total Cleave (whose splash never duplicates) or a dense mob farm.
+      max-per-tick: 16
+
+    # Everything you LOOK AT multiplies. A repeating look-tick ray-traces the crosshair and duplicates the
+    # entity in it — a mob spawns copies, a dropped stack copies itself, an arrow spawns parallel arrows
+    # (free multishot). Clearing item milestones raises the multiplier (copies per look): the climbing "x"
+    # shows on the XP bar above the hotbar, the next required item on the right-side info panel.
+    lookmultiplies:
+      # How often (ticks) the look-tick fires for each player. 20 = once per second.
+      look-interval-ticks: 20
+      # How far (blocks) the crosshair ray reaches for an entity to multiply.
+      look-distance: 6.0
+      # Multiplier before the first milestone is cleared.
+      starting-multiplier: 1
+      # Hard safety cap on copies spawned per player per look-tick, whatever the milestone multiplier is
+      # (bounds the late-game "x60" snowball so it cannot fry the server). Raise for more chaos.
+      max-copies-per-tick: 20
+      # Which entity kinds the crosshair ray multiplies.
+      multiply-mobs: true
+      multiply-items: true
+      multiply-projectiles: true
+      play-sound: true
+      announce-level-up: true
+      # The progression ladder. Each rung: once the party COLLECTIVELY holds `count` of `item`, the
+      # multiplier steps to `multiplier` and the next rung is shown. Shared + persisted, never regresses.
+      # Mirrors the video's advancement gates. Empty = the built-in default ladder below is used.
+      milestones:
+        - { item: cobblestone,     count: 3, multiplier: 2 }
+        - { item: iron_ingot,      count: 1, multiplier: 3 }
+        - { item: diamond,         count: 1, multiplier: 5 }
+        - { item: obsidian,        count: 1, multiplier: 10 }
+        - { item: blaze_rod,       count: 1, multiplier: 25 }
+        - { item: ender_pearl,     count: 1, multiplier: 30 }
+        - { item: netherite_ingot, count: 1, multiplier: 40 }
+        - { item: ender_eye,       count: 1, multiplier: 60 }
+
+    # Every JUMP duplicates every entity around you, once. Untargeted (unlike lookmultiplies): a jump
+    # beside a herd, a dropped stack and a creeper doubles all three at the same instant, so the count is
+    # exponential in jumps. The trigger is the jump INPUT, not upward motion — being knocked into the air
+    # by a mob, an explosion or a piston does NOT count, while a critical hit (which IS a jump) does.
+    # There is deliberately no y-delta key: no movement sample can tell a keypress from a creeper punt.
+    # Entity layer only — placed blocks are never touched, so a TNT *block* is inert while lit TNT is not.
+    jumpmultiplies:
+      # Blocks around the jumper scanned for eligible entities. Clamped down to what the player can
+      # actually see, so it never pays for chunks nobody is rendering.
+      radius: 12.0
+      # Copies made of EACH eligible entity per jump. 1 = everything doubles, which is the video's rule;
+      # higher is a straight power multiplier on an already-exponential mode.
+      copies-per-entity: 1
+      # Ceiling on one jump, so a single hop beside a mob farm cannot spawn unboundedly in one tick.
+      max-clones-per-jump: 1024
+      # Shared per-tick spawn budget (0 = uncapped), the same one mobduplication and cleave drain — a big
+      # jump spreads across ticks instead of spending the whole allowance at once. The tightest value any
+      # composed challenge asks for wins.
+      max-per-tick: 256
+      # Live-entity ceiling measured over the same area the sweep would touch (0 = uncapped). At the
+      # ceiling the mode REFUSES to clone and says "saturated" on the info panel — nothing is culled.
+      max-live-entities: 4000
+      # Debounce only, never the detector: one physical jump can never register twice.
+      jump-cooldown-ms: 250
+      # Which entity kinds a jump duplicates. Bosses are opt-IN: a second Ender Dragon mid-fight is the
+      # single most destructive thing this mode can do, so it is a choice rather than a default.
+      multiply-mobs: true
+      multiply-items: true
+      multiply-projectiles: true
+      multiply-tnt: true
+      multiply-bosses: false
+      play-sound: true
+
+    # Random Layer One Chunk. A SkyBlock-style VOID world (no natural terrain): the experience generates
+    # empty, and this challenge builds a starting island (1 layer of dirt over 2 of stone) plus a distant
+    # island with a chest of SkyBlock starter items. The one-chunk column then grows over time: every
+    # Minecraft day `layers-per-day` new random layers are added below, deepening the pit. Each layer is a
+    # random block slab, a TNT+pressure-plate trap, or a mob-spawn slice. The info panel shows layers
+    # added, the day, and the time until the next layers appear.
+    # Layered Dimensions: one chunk of stacked layers in EVERY dimension, sharing one layout. Pick it as
+    # the experience's map type (it is a generated map, so it is mutually exclusive with the SkyBlocks).
+    #
+    # The Overworld and the Nether each get their own column of `layers` slabs, `layer-height` blocks
+    # tall, in their own materials. The End is deliberately left as an ordinary End — after two dimensions
+    # of digging, the reward is somewhere that behaves normally.
+    #
+    # HEIGHT NOTE: the dimensions are not the same size. The Overworld is 384 blocks tall (-64..320), so
+    # 100 layers of 3 fit easily. The NETHER is only 128, so ~40 layers of 3 is all that physically fits;
+    # the generator clamps to what the dimension has room for rather than asking the server to build
+    # outside it. Lower `layer-height` if you want the Nether closer to the full count (2 gives ~63, 1
+    # gives ~127). The clamped count is shown on the debug HUD.
+    layereddimensions:
+      # How many layers each dimension's column is made of (clamped per dimension — see above).
+      layers: 100
+      # How many blocks tall each layer is.
+      layer-height: 3
+      # Share of layers that are a hazard rather than plain rock: spawners, liquid pools, TNT under
+      # pressure plates, magma floors, cobwebs. The FIRST layer is always plain whatever this is set to,
+      # because you have to be able to stand somewhere when you arrive.
+      hazard-chance: 0.35
+      # Which chunk the column occupies. 0,0 keeps it at the world origin.
+      chunk-x: 0
+      chunk-z: 0
+      # The deepest layer of the NETHER column: an already-active End portal, so digging all the way down
+      # is what opens the way onward. Reaching the Nether at all stays conventional — build an obsidian
+      # frame and light it.
+      nether-floor-block: end_portal
+      # Empty = the built-in palettes below.
+      overworld-palette: []
+      nether-palette: []
+      overworld-mobs: []
+      nether-mobs: []
+
+    # Death Resets: hardcore with no goals. When ANY player dies the world freezes, everyone is stripped
+    # back to nothing, and the world itself is deleted and regenerated with new terrain and a new seed.
+    # The HUD shows three figures: how long the run has been PLAYED (counted only while somebody is
+    # inside it), in-game days survived in the CURRENT world, and how many worlds the run has been
+    # through. Underneath, the run also keeps each player's own time inside and their death count.
+    # All of it survives a restart, and everything except the day count survives a reset — the days are
+    # the age of the current world, so a new world starts again at zero.
+    #
+    # NOTE: this challenge forces HARDCORE on. The owner's hardcore toggle reads as locked while it is
+    # selected — the world is generated hardcore and the death handling assumes it still is.
+    deathresets:
+      # Ticks per in-game day for the "Days" readout. 24000 is vanilla (20 real minutes). Lower it to
+      # make the counter climb faster; it does not change how fast the world's clock actually runs.
+      day-length-ticks: 24000
+
+    # Random Layers: a void SkyBlock whose column deepens every in-game day — in the Overworld AND in its
+    # own VOID Nether. Both dimensions grow on the same clock, each from its own palette and mobs, each
+    # with its own frontier, so neither is a shallower afterthought of the other.
+    #
+    # NOTE: how a world generates is fixed when it is first created. An experience made BEFORE the Nether
+    # became void keeps its ordinary Nether — the server logs a warning saying so on start. Create a new
+    # experience (or delete that dimension's folder) to get the void version.
+    randomlayers:
+      # The Nether's starting platform, top-down. A portal lit in a void Nether comes out over nothing,
+      # so this is what the first trip through lands on.
+      nether-island-layers: []
+      # Blocks the NETHER column's layers are drawn from. Empty = the built-in Nether palette.
+      nether-palette: []
+      # Mobs a Nether mob-layer spawns. Empty = the built-in Nether mob list.
+      nether-mob-types: []
+      # How many new layers are added each cycle.
+      layers-per-day: 3
+      # Length of a layer cycle in ticks (read from the world clock). 12000 = HALF a Minecraft day
+      # (10 minutes real) — a fresh batch of layers appears every half-day. 24000 would be a full day.
+      day-length-ticks: 12000
+      # Side length of the square layer slab, centred on world spawn. 16 = one full chunk.
+      layer-size: 16
+      # Side length of the SkyBlock starting island, centred on spawn.
+      island-size: 16
+      # The starting island, top-down: grass to stand on over two layers of stone. Empty = this default.
+      island-layers: [grass_block, stone, stone]
+      # How many starter trees are scattered on the island (a random count in this inclusive range).
+      min-trees: 2
+      max-trees: 3
+      # Blocks from spawn to the distant chest island (classic SkyBlock second platform).
+      chest-island-distance: 60
+      # The chest island ground, top-down: sand over the harder sandstone. Empty = this default.
+      chest-island-layers: [sand, sandstone, sandstone]
+      # SkyBlock starter chest loot. `chest-guaranteed` always appears ("id" or "id:amount"); the built-in
+      # weighted pool of seeds/saplings is then rolled between chest-rolls-min and chest-rolls-max times.
+      chest-guaranteed: [lava_bucket, water_bucket, ice:2]
+      chest-rolls-min: 3
+      chest-rolls-max: 5
+      # Layers placed immediately when the experience first starts (so the pit exists from day zero).
+      initial-layers: 3
+      # How often (ticks) the world clock is polled for a day rollover.
+      check-interval-ticks: 40
+      # Cap on layers added in one poll if the world skipped several days at once.
+      max-catch-up-days: 20
+      announce-new-layers: true
+      play-sound: true
+      # Probability a given layer is a TNT trap / a mob-spawn layer (the rest are ordinary block layers).
+      tnt-layer-chance: 0.12
+      mob-layer-chance: 0.15
+      # Hostile mobs a mob-spawn layer can spawn, and how many per layer.
+      mob-types: [zombie, skeleton, spider, creeper]
+      mob-count-min: 4
+      mob-count-max: 10
+      # Empty = the broad default block palette (ChallengePalettes.COMPREHENSIVE_BLOCKS). List ids to restrict.
+      palette: []
+
+    # Random Item Giver Skyblock: a VOID world with ONE special block at spawn. Breaking that block gives a
+    # random item from a big weighted pool and regenerates the block as a progressively better one; every
+    # `blocks-per-chest` breaks a loot chest spawns. Broken count shows under each player's nameplate; the
+    # sidebar shows the level and blocks-until-next-chest.
+    randomskyblock:
+      # Total breaks per progression level (the source block cycles through richer palettes each level).
+      blocks-per-level: 30
+      # A loot chest spawns near spawn after every this many breaks.
+      blocks-per-chest: 20
+      announce-chests: true
+      # How many pool rolls a spawned chest contains.
+      chest-rolls-min: 5
+      chest-rolls-max: 9
+      # Standardized item pool with spawn probabilities, one row per line: "id:min:max:weight". Empty = the
+      # built-in 60-item default (spans the whole progression so a run can always be completed).
+      item-pool: []
+
+    # Random Mob: a random mob spawns next to each player on a timer.
+    randommob:
+      interval-seconds: 20
+      mobs-per-spawn: 1
+      # Probability (0..1) each spawned HOSTILE gets randomized armour + a weapon (sword/axe/trident/bow).
+      # 0 disables; passive mobs (cows, pigs …) are never armed.
+      equip-chance: 0.5
+      # Empty = the built-in 25-mob default (hostile + passive mix). List entity ids to restrict.
+      mob-types: []
+
+    # Randomized Block & Mob Drops: every block break and mob kill drops a random item (fresh roll each time).
+    randomdrops:
+      # Empty = the WHOLE item registry the platform reports (falls back to a ~40-item default). List to restrict.
+      item-pool: []
+
+    # Random Events: a chaotic event fires on this interval (default fixed at 1m30s = 90s). Set min < max for
+    # a random interval. Selection is a weighted shuffle bag (see the 64 built-in events).
+    randomevents:
+      min-interval-seconds: 90
+      max-interval-seconds: 90
+
+    # Classic Skyblock: the standard vanilla SkyBlock island in a VOID world (its linked Nether is void too
+    # and mirrors the island in Nether blocks). It builds a fixed layout, so there is nothing to tune here.
+    classicskyblock: {}
+
+# ------------------------------------------------------------
+# Chaos mode: one shared, open-ended survival world that gives EACH player a random set of challenge
+# twists whose effects apply only to them, and reshuffles every player's twists on a timer (resetting
+# the previous effects first). Start it with /sx start chaos; others join with /sx join chaos. Each
+# twist reads its own tuning from experiences.modes.<id> above (no duplication here).
+# ------------------------------------------------------------
+chaos:
+  # How often (minutes) every player's twists reset + reroll.
+  cycle-minutes: 10
+  # How many random twists each player gets per cycle.
+  challenges-per-player: 3
+  # Eligible twist ids. Empty = the whole challenge catalog.
+  pool: []
+  announce-rolls: true
+
+# ------------------------------------------------------------
+# Kits - used by combat mode, the 'starter-kit' options, and '/sx admin kit give'.
+# enchants / effects use the modern lowercase ids (sharpness, power, speed, ...);
+# uppercase legacy names are also accepted.
+# An item may set an optional integer 'slot' to pin it to an exact inventory index
+# (0-8 = hotbar left-to-right, 9-35 = main inventory); items without 'slot' fill the first free space.
+# ------------------------------------------------------------
+kits:
+  default:
+    items:
+      - { material: IRON_SWORD,   amount: 1, enchants: { sharpness: 1 } }
+      - { material: BOW,          amount: 1, enchants: { power: 1 } }
+      - { material: ARROW,        amount: 32 }
+      - { material: GOLDEN_APPLE, amount: 5 }
+      - { material: COOKED_BEEF,  amount: 16 }
+    armor:
+      helmet:     { material: IRON_HELMET }
+      chestplate: { material: IRON_CHESTPLATE }
+      leggings:   { material: IRON_LEGGINGS }
+      boots:      { material: IRON_BOOTS }
+    effects: []
+  ranger:
+    items:
+      - { material: BOW,          amount: 1, enchants: { power: 2, flame: 1 } }
+      - { material: ARROW,        amount: 64 }
+      - { material: STONE_SWORD,  amount: 1 }
+      - { material: GOLDEN_APPLE, amount: 3 }
+    armor:
+      chestplate: { material: LEATHER_CHESTPLATE }
+      boots:      { material: CHAINMAIL_BOOTS }
+    effects:
+      - { type: speed, amplifier: 1, duration-seconds: 99999 }
+  # The Fugitive minigame: the runner gets blocks + iron gear + ender pearls to escape and outlast.
+  # Hotbar layout: sword (0), pickaxe (1), blocks (2), ender pearls (3); the Spear Dash item is placed
+  # in slot 8 by the game.
+  fugitive:
+    items:
+      - { material: IRON_SWORD,   amount: 1,  slot: 0 }
+      - { material: IRON_PICKAXE, amount: 1,  slot: 1 }
+      - { material: COBBLESTONE,  amount: 64, slot: 2 }
+      - { material: ENDER_PEARL,  amount: 3,  slot: 3 }
+    armor:
+      helmet:   { material: IRON_HELMET }
+      leggings: { material: IRON_LEGGINGS }
+    effects: []
+  # The Fugitive minigame: hunters get lighter gold gear, so the runner can fight back.
+  # Hotbar layout: sword (0), pickaxe (1); the tracking compass is placed in slot 2 and the Spear Dash
+  # item in slot 8 by the game.
+  hunter:
+    items:
+      - { material: GOLDEN_SWORD,   amount: 1, slot: 0 }
+      - { material: GOLDEN_PICKAXE, amount: 1, slot: 1 }
+    armor:
+      helmet:   { material: GOLDEN_HELMET }
+      leggings: { material: GOLDEN_LEGGINGS }
+    effects: []
+# Which build this process is running, published as network_nodes.plugin_version
+# ("<version>+<build.id>"). Blank means "unknown", which is exactly what a node on
+# an older build publishes — so a rolling update cannot tell the two apart, and
+# that is the point.
+#
+# NOT normally set here: the provisioner passes -Dsexidium.build.id=<id> per node,
+# which is the race-free value, because it is chosen by whatever pinned that node's
+# jar. Any -Dsexidium.<path> overrides the YAML.
+build:
+  id: ''
+
+# ============================================================
+# Network (Velocity proxy + multiple backends)
+#
+# OFF by default, and off is the fully supported single-server product: one Paper
+# server, SQLite, no proxy. Everything below is ignored while network.enabled is
+# false, and every networked mechanism resolves to its local, in-memory
+# implementation, so a standalone server behaves exactly as it always has.
+#
+# Turning it on is not a single-key change: a network needs a Velocity proxy in
+# front (docker/provision.sh provisions one) and a shared MySQL/Postgres in
+# `database:` below, or each backend keeps its own SQLite and nothing is shared.
+# ============================================================
+network:
+  # THE switch. false = standalone.
+  enabled: false
+  node:
+    # Stable identity of this process, and the routing key a persistent world is
+    # pinned to. It must NOT change across restarts: an experience whose folder
+    # lives on worker-2's disk is found again by this id. Blank defaults to the
+    # role name.
+    id: ''
+    # Shown in the Discord server card and the network status report.
+    display-name: ''
+    # standalone | lobby | worker | proxy
+    #
+    #   standalone  every capability; the single-server default
+    #   lobby       the lobby world, the queue/matchmaking authority
+    #   worker      experiences + minigames, many worlds, its own local disk
+    #   proxy       routing, the login auth gate, the resource pack, the Discord bot
+    #
+    # An unrecognised value is a startup error rather than a silent fallback to
+    # standalone, because falling back would hand a restricted node every
+    # capability -- four backends would each start a Discord bot on one token.
+    role: standalone
+    # Optional explicit override of the role preset, for topologies the four
+    # presets do not cover (folding the queue onto a worker on a two-box setup).
+    # Empty means "use the role preset". Accepts either spelling:
+    #   [lobby, queue-authority]  or  [LOBBY, QUEUE_AUTHORITY]
+    # Valid: lobby, experiences, minigames, queue-authority, bot-host, pack-host,
+    #        api-host, router
+    capabilities: []
+    # Player slots and world slots this node advertises to its peers, so a peer
+    # planning a new world can tell a node with room from one that is full.
+    # 0 = read it from the platform (max-players) / unbounded (max-worlds).
+    max-players: 0
+    max-worlds: 0
+  placement:
+    # How a peer is chosen for a world that has no home yet. NONE of this moves an
+    # EXISTING world: a world with a placement row stays where it is, because its
+    # chunks are on that machine's disk and re-choosing a home is how saves get
+    # overwritten. These keys only decide where a NEW world is born.
+    #
+    # Load is compared in BANDS rather than by raw player count, so a one-player
+    # difference does not flip the choice for every world in a burst.
+    load-band-percent: 10
+    # Assumed capacity for a node that has not published max-players yet, so the
+    # band means something in a node's first seconds.
+    assumed-capacity: 100
+    # A candidate below this TPS, or above this heap ratio, is skipped. If the gate
+    # would exclude EVERYTHING the whole fleet is warm and the gate is ignored —
+    # refusing to place a world because every node is busy turns a busy network
+    # into a broken one.
+    min-tps: 15.0
+    max-heap-ratio: 0.90
+  drain:
+    # A rolling update: the node hands its worlds and players over, then reports
+    # SX-DRAIN phase=READY and is safe to restart. Nobody is disconnected.
+    #
+    # How long a drain phase may take before it gives up and reports STALLED. A
+    # stalled drain is a signal to ABORT the roll, never to restart the node.
+    phase-timeout-seconds: 120
+    # How long a live minigame is given to finish on its own before it is ended
+    # through the ordinary reconnect-snapshot path (items and position kept).
+    match-grace-seconds: 180
+    # How long a drain row belonging to a node that is DOWN is kept before any
+    # peer sweeps it. Hygiene only; the orchestrator's own timeout is the real
+    # recovery.
+    stale-seconds: 600
+    # The network-wide "only one node drains at a time" lease.
+    lease-seconds: 900
+
+
+# ------------------------------------------------------------
+# Player ranks - persisted to SQLite, surfaced by the Discord bot.
+# ------------------------------------------------------------
+database:
+  # Backend: sqlite (default, embedded, zero-config), mysql, or postgres.
+  # Use mysql/postgres for a GLOBAL database shared by several servers (a network); each server holds
+  # one connection and the database engine arbitrates between them. sqlite stays a single local file.
+  type: sqlite
+
+  # --- sqlite (type: sqlite) -------------------------------------------------
+  # SQLite file, relative to the plugin's data folder.
+  file: sexidium.db
+
+  # --- mysql / postgres (type: mysql | postgres) -----------------------------
+  # The JDBC drivers are downloaded automatically (Paper plugin libraries / bundled in the NeoForge jar).
+  host: localhost
+  port: 3306            # mysql default 3306, postgres default 5432
+  name: sexidium        # database/schema name (must already exist)
+  user: sexidium
+  password: ''
+  # Extra JDBC URL parameters appended verbatim (key=value&key=value), optional.
+  properties: ''
+
+ranks:
+  # level = floor(points / points-per-level). Players level up purely from points, so progress happens
+  # whether or not they have linked Discord with /sx auth (see auth.require-linked-for-points below).
+  points-per-level: 100
+  award:
+    # MINIGAME points: everyone earns `participate` on joining a match (this is the "some points even
+    # when you lose"); the winner(s) earn the larger mode-specific *-win on top, and each kill earns `kill`.
+    participate: 10     # awarded once for joining a game (also the loser's reward)
+    kill: 15            # awarded to the eliminator
+    race-win: 100
+    duel-win: 120
+    tntwar-win: 90
+    combat-win: 80
+    fugitive-win: 130
+    # EXPERIENCE points: the open-ended Experience + Chaos modes have no win/lose, so players earn by
+    # time spent in the experience world. Every `experience-interval-seconds` each online participant
+    # earns `experience-per-minute` points pro-rated to the interval. Set per-minute to 0 to disable.
+    experience-per-minute: 2
+    experience-interval-seconds: 60
+
+# ------------------------------------------------------------
+# Discord authentication - players link once with /sx auth, then /auth <code>.
+# ------------------------------------------------------------
+auth:
+  enabled: true
+  # Whether players must link a Discord account before they can join:
+  #   auto  (default) - required only when a Discord bot is configured (bot.enabled + bot.token set)
+  #   true            - always required
+  #   false           - never required
+  # When required, an unlinked player is disconnected with a bilingual (English + Brazilian
+  # Portuguese) screen containing a freshly generated code to run as /auth <code> in Discord.
+  require-for-login: auto
+  code-expiry-seconds: 600
+  code-length: 6
+  # Numeric-only by default so codes are readable in the Minecraft disconnect screen.
+  code-characters: '23456789'
+  # false (default): unlinked players still earn points and level up normally; a linked account only
+  #   adds cross-alt leaderboard aggregation. true: points are withheld until the player runs /sx auth.
+  require-linked-for-points: false
+  remind-unlinked-on-award: true
+
+  # ------------------------------------------------------------
+  # FRICTIONLESS LOGIN. Offline mode has no cryptographic identity, so any secret a cracked
+  # player holds is a password. Nothing below eliminates that -- what it does is AUTOMATE the
+  # transmission, so the player almost never types anything:
+  #   * premium players are verified by Mojang and type nothing, ever
+  #   * Bedrock players are verified by Xbox Live and type nothing, ever
+  #   * cracked players approve once per network with a Discord button, then get an
+  #     IP+name session that lasts hours
+  # ------------------------------------------------------------
+
+  identity:
+    # The canonical player UUID. `offline` (the ONLY implemented value) derives it from the
+    # lowercase name and pins every connection -- cracked, premium and Bedrock -- to it at the
+    # proxy, so a premium login does not arrive as a stranger and `Foo`/`foo` stop being two
+    # accounts with two point balances. `premium` is reserved and refused at startup: adopting
+    # Mojang UUIDs would mean rewriting player uuids across ten tables on every first premium login.
+    #
+    # Pre-existing rows split across two spellings of one name are NOT merged automatically; the
+    # newest is adopted and the other is left for staff.
+    canonical-uuid: offline
+
+  premium:
+    # FastLogin-style auto-login. PROXY ONLY: Paper cannot flip online-mode per connection, so
+    # this does nothing on a standalone server.
+    enabled: false
+    # A Mojang-verified player skips the Discord link requirement entirely. Mojang already proved
+    # who they are; asking for a Discord link on top is friction for no security.
+    bypass-link: true
+    # Refuse OFFLINE connections to a name that has been verified as premium. This is the
+    # anti-squat rule and the reason the lookup runs even for cracked-looking clients.
+    protect-verified-names: true
+    lookup-timeout-millis: 2500
+    positive-cache-seconds: 21600
+    negative-cache-seconds: 1800
+    recheck-days: 30
+    # Mojang documents ~600 requests / 10 min per source IP. 120/min keeps a 2x margin.
+    max-lookups-per-minute: 120
+    # Mojang is unreachable AND we have never seen this name:
+    #   deny    (default) - refuse with "try again in a minute". The only answer that cannot hand
+    #                       an unknown name to an impostor.
+    #   offline           - let them in as a cracked player. UNSAFE; availability over safety.
+    # Names we already know are premium are forced ONLINE even during an outage, and names we
+    # already know are cracked are forced OFFLINE -- neither needs a live lookup.
+    unknown-on-outage: deny
+    # A verified Mojang account connects with a name that a cracked player already linked:
+    #   require-approval (default) - ask the EXISTING linked Discord user with a button
+    #   deny                       - refuse and let staff sort it out
+    #   adopt                      - trust Mojang over the existing link (unsafe here)
+    on-conflict: require-approval
+
+  bedrock:
+    # Requires Geyser + Floodgate installed ON THE PROXY -- not on the backends, which is the
+    # tempting and wrong move under modern forwarding. They are not installed on network nodes
+    # today, so this stays off and the code path is inert.
+    enabled: false
+    auto-login: true
+    name-prefix: '.'
+
+  session:
+    # An IP+name session: "this name was approved from this network recently". NOT permanent, and
+    # NOT IP-alone -- under Brazilian CGNAT one public IP is shared by many people, so an IP by
+    # itself is a hijack vector. The binding is (identity, ip) with a short TTL.
+    #
+    # Turn this on TOGETHER with approval.enabled: sessions without an approval path would be a
+    # regression, since today a linked player is allowed from any IP forever.
+    enabled: false
+    ttl-hours: 18
+    # Sliding renewal can never push past this. After it, you approve again. Period.
+    absolute-ttl-hours: 72
+    max-per-identity: 5
+    # Salt for the stored IP hashes. Raw IPs are NEVER written to the database. Leave blank and it
+    # is derived from api.token; set it per deployment (SX_AUTH_IP_PEPPER, mirrored onto every node
+    # by the provisioner) and the hashes stop being comparable across deployments. A dedicated pepper
+    # is recommended over leaving it blank: api.token already guards the bridge, so reusing it as the
+    # only salt means one leaked secret plus a DB dump recovers the (small) IPv4 hash space. The pepper
+    # MUST be identical on the proxy and every backend, or the hashes disagree and sessions break.
+    ip-pepper: ''
+    # Residential IPv6 rotates its interface identifier constantly, so bind the /64 prefix instead
+    # of the full address. IPv4 always binds the full address.
+    bind-ipv6-prefix: 64
+    # Names that NEVER get an IP session and always require a fresh Discord approval (staff).
+    strict-identities: []
+    max-requests-per-hour-per-identity: 6
+    max-requests-per-hour-per-ip: 20
+    max-logins-per-minute-per-ip: 10
+    # No node with the BOT_HOST capability is alive, so no approval can ever be delivered:
+    #   allow-linked (default) - a player with a Discord link gets in (exactly today's behaviour)
+    #   code                   - fall back to the /auth <code> flow
+    #   deny                   - refuse. Locks the server out if Discord is down.
+    fallback: allow-linked
+
+  approval:
+    enabled: false
+    request-ttl-seconds: 300
+    courier-poll-millis: 750
+    sweep-interval-seconds: 60
+    deny-block-hours: 24
+    # Fallback channel when the player's Discord DMs are closed (very common). Blank = DM only.
+    channel-id: ''
+
+  hold:
+    # Instead of "approve then press Reconnect", hold the player IN the lobby, frozen and hidden,
+    # and release them the instant the Discord button is pressed -- no reconnect at all.
+    #
+    # This is the only setting here that lets an UNVERIFIED connection reach a world. The player is
+    # a hidden spectator who cannot move, chat, type a command or touch anything, and is kicked at
+    # the timeout -- but they do occupy their name for that window. Off by default; turn it on when
+    # you are satisfied with the freeze.
+    enabled: false
+    timeout-seconds: 120
+    block-move: true
+    block-chat: true
+    block-commands: true
+    hide-from-others: true
+    spectator: true
+
+# ------------------------------------------------------------
+# Bridge the Discord bot talks to. The real-time channel is a loopback WebSocket (rpc-port); the legacy
+# HTTP endpoints (port) are kept for health checks / backwards compatibility. Both bind localhost only.
+# ------------------------------------------------------------
+api:
+  enabled: true
+  port: 8787
+  # Which address the HTTP API listens on. Loopback by default, so a standalone or dev server is
+  # unreachable from outside the machine.
+  #
+  # A NETWORK node sets 0.0.0.0 (the provisioner writes -Dsexidium.api.bind=0.0.0.0 into the node's
+  # JVM args), because the rolling-update control surface — /node, /network, /node/drain,
+  # /node/selftest — has to be reachable from the orchestrator, and there is no other way in: the
+  # container entrypoint is a bare `exec java … nogui` with no rcon, no tmux and no stdin. Each
+  # container has its own network namespace and nothing is published to the host, so this exposes the
+  # API on the compose bridge only. The token below is the real gate, and every one of those
+  # endpoints refuses to answer while it is blank or still the shipped default.
+  bind: 127.0.0.1
+  # WebSocket RPC port the bot hosts and the server connects to (real-time, type-safe events).
+  rpc-port: 8789
+  # Shared secret the bot must send to run /mc commands and as the WebSocket handshake token. CHANGE
+  # THIS — while it is left as the default value (or blank) the /command + restart bridge refuses to run.
+  token: change-me-please
+  # Optional allowlist of command names the bridge may run (first word only, e.g. say, tp, give).
+  # Leave empty to allow any command (still token-gated and bound to loopback).
+  command-allowlist: []
+  # Console commands the /restart and /stop bot commands dispatch. `restart` needs a process wrapper
+  # (systemd / a start.sh loop) to actually come back up; otherwise it just stops the server.
+  restart-command: restart
+  stop-command: stop
+  # Relay every captured console line to the bot as a real-time event (for the Discord live-console
+  # channel). OFF by default to avoid chatter; /console (pull) works regardless.
+  rpc-console-events: false
+
+# ------------------------------------------------------------
+# Menu UI / custom GUI art.
+# The chest menus (/sx) are unified in core and render on every platform. On top of that, Sexidium can
+# auto-serve a small resource pack so JAVA clients see bespoke "Nexo-style" GUI art (glyph backgrounds
+# + custom item icons). Bedrock/Geyser players never load Java packs — they get the native Cumulus
+# Form UI instead — and a Java client that declines the pack simply sees the plain chest. Pure
+# enhancement, never required for the menus to work.
+# ------------------------------------------------------------
+ui:
+  resource-pack:
+    enabled: false           # master switch for building + serving the menu art pack (OFF by default;
+                             # set true to build/serve the textures — Java clients then get the full
+                             # glyph/icon art, and decline falls back to plain vanilla-material menus)
+    # External host override. If you already serve the pack from a CDN/webserver, put its URL here and
+    # the built-in host below stays off.
+    url: ""
+    # SHA-1 of the file you host at `url`. REQUIRED when `url` is set and you host CUSTOM art — the
+    # client verifies the download against this hash, so it must match the bytes served from `url` (the
+    # generated placeholder pack's hash will NOT match your real-art file). Leave blank to use the
+    # built-in host below. Compute with: sha1sum your-pack.zip
+    sha1: ""
+    # Public host/IP your players connect to. REQUIRED for remote players to download the pack — the
+    # built-in host binds locally and advertises this address. Leave blank only for local testing.
+    host: ""
+    bind: "0.0.0.0"          # local interface the built-in pack host binds to
+    port: 8788               # port the built-in pack host listens on (must be reachable by clients)
+    required: false          # true = kick players who decline the pack (not recommended for cross-play)
+    # MiniMessage prompt shown on the pack-accept screen. <brand> is replaced with branding.label.
+    prompt: "<gradient:#ff5f6d:#ffc371><brand></gradient> <gray>menu art pack — accept for the full look.</gray>"
+
+  # ------------------------------------------------------------
+  # Menu-art CALIBRATION: a global GUI-pixel nudge for the negative-space background art, to absorb a
+  # client/version baseline mismatch (the art sits consistently up/left or down/right of the slot grid).
+  # Leave at 0 unless the art is visibly misaligned. To measure: open Admin > Menu Art Calibration in-game
+  # (operators only) — it overlays the real slot grid + a 1px ruler so you can read the offset directly.
+  #   calibrate-dx: + moves the art RIGHT, - moves it LEFT  (1 = 1 GUI pixel; takes effect on next open).
+  #   calibrate-dy: + moves the art DOWN,  - moves it UP    (baked into the pack; the client re-downloads
+  #                 it on next join because the pack hash changes). Restart the server after editing.
+  # ------------------------------------------------------------
+  menu-art:
+    calibrate-dx: 0
+    calibrate-dy: 0
+
+  # ------------------------------------------------------------
+  # In-world DECOR: native display entities (ItemDisplay/BlockDisplay) that dress the lobby — a spinning
+  # mode icon + pedestal at each minigame NPC, and an optional animated hub centerpiece. This is ADDITIVE
+  # Java flair: item/block displays are invisible to Bedrock (Geyser) so they are hidden from Bedrock
+  # players; Java clients that declined the menu pack see a sensible vanilla item, pack-loaded clients see
+  # the bespoke art. Reuses the menu art models — no extra assets. Animation is client-interpolated (cheap).
+  # ------------------------------------------------------------
+  decor:
+    enabled: true            # master switch. false = spawn nothing AND sweep away any existing decor.
+    centerpiece:
+      enabled: false         # opt-in: a floating, glowing, spinning item at a fixed lobby anchor
+      world: ""              # blank = the lobby world (worlds.lobby.name)
+      x: 0.5
+      y: 70.0
+      z: 0.5
+      scale: 1.6
+      item: "minecraft:nether_star"                 # base item shown without the pack
+      model: "sexidium:system/windows_grid"         # item_model overlay shown with the pack
+    podiums:
+      enabled: false         # opt-in: a spinning mode icon above each minigame-bound lobby NPC.
+                             # OFF by default so the NPC shows only its floating text nameplate.
+      item-height: 2.4       # blocks above the NPC's feet
+      item-scale: 0.9
+      pedestal-block: "minecraft:smooth_quartz"     # the block shown under the NPC when portals.enabled
+    portals:
+      enabled: false         # opt-in: a GLOWING pedestal block ONE BLOCK BELOW each minigame NPC's feet
+                             # (mode-colored). OFF by default; when off the NPC stands on the world floor.
+    animation:
+      spin-degrees-per-second: 45.0
+
+# ------------------------------------------------------------
+# Discord bot (TypeScript, run by this plugin via Bun).
+# The plugin jar ships only the bot's TypeScript source (no bundled runtime, no node_modules), so it
+# stays small and architecture-independent. On first start the plugin downloads the matching bun
+# runtime for this server's OS/architecture and runs `bun install` for the bot's dependencies.
+# Admins can inspect/restart/configure it in-game with /sx bot.
+# ------------------------------------------------------------
+bot:
+  enabled: false           # set true once the token is filled in
+  token: ''                # Discord bot token
+  guild-id: ''             # optional: register slash commands instantly to one guild
+  admin-role-id: ''        # Discord role allowed to use /mc
+  # Real-time relays. Both were read by the bot and never injected by the plugin, so both were
+  # silently dead: the console tail and the join/leave feed simply never appeared anywhere.
+  log-channel-id: ''       # live console relay (needs api.rpc-console-events: true)
+  events-channel-id: ''    # player join/leave feed
+  # Download the bun runtime automatically for this server's OS/arch (saved to <data>/runtime/bun).
+  # Set false to use a system 'bun' from PATH (runtime-command) instead.
+  download-runtime: true
+  bun-version: latest      # pin a bun version (e.g. 1.3.0) or 'latest'
+  runtime-command: bun     # executable used when download-runtime is false or the download fails
+
+# ------------------------------------------------------------
+# Reconnection: disconnected players can rejoin a match in progress.
+# All minigames and experiences are reconnectable: a player who disconnects keeps their
+# slot for timeout-seconds and is teleported back into the match on rejoin.
+# ------------------------------------------------------------
+reconnect:
+  # Master switch for reconnect across all modes.
+  enabled: true
+  # How long a match waits for a disconnected player before resolving the match.
+  timeout-seconds: 120
+  # After a server restart, how long persisted matches wait for players to return before being discarded.
+  restore-grace-seconds: 600
+
+# ------------------------------------------------------------
+# Parties (ephemeral) — invite players and pull them into a game on start.
+# ------------------------------------------------------------
+party:
+  max-size: 8
+  invite-expiry-seconds: 60
+
+# ------------------------------------------------------------
+# Quick-play matchmaking — a lone (or mobile) player clicks a minigame and joins a queue
+# instead of failing with a "needs N players" error. A queue starts a short countdown the
+# moment it reaches the mode's minimum player count and launches the match when it ends.
+# ------------------------------------------------------------
+matchmaking:
+  # Seconds counted down once a queue has enough players, before the match launches.
+  countdown-seconds: 5
+  # Largest roster a single quick-play match will pull from a queue.
+  max-players: 12

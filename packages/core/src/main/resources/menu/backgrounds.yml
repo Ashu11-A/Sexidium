@@ -1,0 +1,162 @@
+# Sexidium background-glyph registry — the single config that drives the chest-GUI
+# backgrounds (the size-keyed frames and the baked per-screen scenes).
+#
+# It reuses the ItemsAdder/Nexo `font_images` shape (an id -> { path, y_position,
+# permission } map, where each image is painted behind the GUI as a negative-space
+# font glyph) and EXTENDS it with the exact render geometry the native title-trick
+# needs. MenuArt reads this at load to build its background-glyph table, and
+# SexidiumResourcePack emits one bitmap-font provider per entry — so adding GUI art
+# is a yml edit here, not a code change. (BackgroundCatalog is the loader.)
+#
+# Geometry is all in GUI pixels. Each entry is a Minecraft bitmap-font glyph painted
+# into the chest title:
+#   path         pack-relative texture under assets/sexidium/textures/.
+#   kind         `chest` (one per chest size 1..6 rows) or `screen` (a baked scene).
+#   rows         chest size (chest entries only); selects the glyph by row count.
+#   height       ON-SCREEN render height (the font `height`), in GUI px. Unchanged at 256.
+#                The texture SOURCE is baked at 768px (3x) for sharpness, so the glyph renders
+#                at scale 256/768 = 1/3 and lands pixel-identically to the old 256 art. The 768px
+#                source exceeds Minecraft's 256px per-glyph atlas, so it ships TILED into <=256px
+#                row strips (scripts/art.py tile-backgrounds; reassembled by MenuArt/PaperMenuArt).
+#   ascent       how far the visible glyph top sits above the title baseline. 13 = window
+#                top; chest frames use 23 because their crest overhangs 10px above it.
+#   left_x       window-x of the visible glyph left edge (negative = it overhangs left).
+#   render_width horizontal text advance after the glyph, in ON-SCREEN GUI px. Minecraft derives
+#                bitmap advance from the non-transparent columns scaled by height/source, so it
+#                stays the visible glyph width even though the source canvas is now 768px.
+#   y_position   ItemsAdder-equivalent vertical offset, kept verbatim for parity /
+#                portability with the source pack. The native font uses `ascent`, not
+#                this; both describe the same placement in their own systems.
+#   permission   ItemsAdder font permission node, kept for parity (unused natively).
+info:
+  namespace: sexidium
+
+font_images:
+  # ----- size-keyed chest frames (UltimateGUI medieval generic_<slots>) -----------------
+  # generic_<rows*9>.png is normalised into a 768px font cell (3x the 256 GUI cell) with its opaque frame
+  # at (0,0); 18 GUI px = 1 slot row, so GUI slot (18,28) — i.e. source (54,84) at 3x — maps to vanilla (8,18).
+  chest_1:
+    path: ui/chest/chest_1.png
+    kind: chest
+    rows: 1
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+  chest_2:
+    path: ui/chest/chest_2.png
+    kind: chest
+    rows: 2
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+  chest_3:
+    path: ui/chest/chest_3.png
+    kind: chest
+    rows: 3
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+  chest_4:
+    path: ui/chest/chest_4.png
+    kind: chest
+    rows: 4
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+  chest_5:
+    path: ui/chest/chest_5.png
+    kind: chest
+    rows: 5
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+  chest_6:
+    path: ui/chest/chest_6.png
+    kind: chest
+    rows: 6
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: chest_template
+
+  # ----- baked hub overlays (SceneBaker output) -----------------------------------------
+  # Transparent medieval-card overlays drawn ON TOP of the chest_6 frame. They share chest_6's EXACT
+  # on-screen geometry (height 256 / ascent 23 / left_x -10 / render_width 198) AND its 768px source cell,
+  # so the overlay stacks 1:1 on the frame and each card lands on its painted slot cell (validate:
+  # scripts/art.py overlay-hub). Normal hub
+  # (six tabs) first so it stays SCREEN_DEFS[0]; the operator hub adds the admin Settings card.
+  screen/main-hub:
+    path: ui/screens/main-hub.png
+    kind: screen
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: screen_template
+  screen/main-hub-op:
+    path: ui/screens/main-hub-op.png
+    kind: screen
+    height: 256
+    ascent: 23
+    left_x: -10
+    render_width: 198
+    y_position: 78
+    permission: screen_template
+
+  # ----- calibration overlay (kind: debug) ----------------------------------------------
+  # A full-window glyph that paints the EXACT vanilla slot grid + a 1px ruler. Open it via
+  # Admin > Menu Art Calibration to measure how far the live art is off the real slots, then
+  # set ui.menu-art.calibrate-dx / -dy in config.yml. kind:debug = same geometry as a screen
+  # (source 0,0 -> GUI 0,0) but NOT a baked-scene PNG (its texture is generated procedurally,
+  # so it is excluded from the committed-screen checks). Keep it LAST so glyph code points and
+  # the pack SHA-1 stay stable for the real glyphs above.
+  screen/calibration:
+    path: ui/screens/calibration.png
+    kind: debug
+    height: 256
+    ascent: 13
+    left_x: 0
+    render_width: 176
+    y_position: 78
+    permission: screen_template
+
+# ----- bitmap fonts (the medieval typography sheets, sliced to per-char PNGs) ------------------
+# Each entry becomes a Minecraft font provider in the pack (assets/sexidium/font/<id>.json): one bitmap
+# provider per character plus a space provider. The glyphs are the per-char PNGs scripts/art.py
+# slice-typography cuts from typography_<id>.png into <dir>/char_<X>.png. UPPERCASE LATIN ONLY — the
+# source sheets ship no lowercase and no digits. The scene baker (SceneAssets) reads the same dirs so the
+# baked screens and the live font match. font: the in-game font key (<font:sexidium:title>...). height/
+# ascent: GUI-px render height and baseline offset. space: advance (px) for the space character.
+fonts:
+  title:
+    font: sexidium:title
+    dir: item/font_title
+    chars: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    height: 8
+    ascent: 7
+    space: 4
+  button:
+    font: sexidium:button
+    dir: item/font_button
+    chars: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    height: 6
+    ascent: 5
+    space: 3
