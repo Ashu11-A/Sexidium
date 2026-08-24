@@ -118,6 +118,33 @@ Bun is **not** a hard dependency: with `bot.enabled` the plugin fetches the matc
 
 ---
 
+## Dependencies
+
+<!-- AI-AGENT-INSTRUCTION: every version here is pinned in build.gradle.kts, module-paper's plugin.yml
+     `libraries:` block or scripts/lib/plugins.sh — change the pin first, then this table. -->
+
+Nothing is vendored: platform APIs are `compileOnly`, JDBC drivers load at runtime, plugins come from Modrinth.
+
+| Library | Version | Role |
+|---|---|---|
+| `io.papermc.paper:paper-api` | 26.1.2 | Paper adapter — provided by the server, `compileOnly`. |
+| `com.velocitypowered:velocity-api` | 3.5.1 | Proxy adapter — `compileOnly`. |
+| `org.xerial:sqlite-jdbc` | 3.53.1.0 | Single-server persistence; fetched by Paper's `libraries:` loader. |
+| `com.mysql:mysql-connector-j` | 9.1.0 | Network persistence — the only driver the proxy jar ships. |
+| `org.postgresql:postgresql` | 42.7.4 | Alternative network backend. |
+| JUnit 5 · Mockito | 5.11.4 · 5.14.2 | Test suites. |
+
+| Server plugin | Need | Purpose |
+|---|---|---|
+| **Multiverse-Core** `5.7.3` | required | Lobby and game world provisioning; pinned to a release build. |
+| **FancyNpcs**, **FancyHolograms** | soft | Lobby NPCs, holograms and live nameplates. |
+| **SkinsRestorer** | soft | `/skin`, and the player-head skins used by chest GUIs. |
+| **BetterHud** | soft | Corner HUD readout; skipped on Minecraft versions its overlay misses. |
+| **Geyser**, **Floodgate**, **Cumulus** | soft | Bedrock support — native Cumulus forms; the proxy owns the listener. |
+| **FastAsyncWorldEdit**, **Axiom** | soft | Map building only — Sexidium never calls into either. |
+
+---
+
 ## Building
 
 ```bash
@@ -132,9 +159,10 @@ build/libs/velocity/Sexidium-Velocity-1.0.0.jar  # proxy only
 build/libs/internal/                             # core artifacts — do NOT deploy these
 ```
 
-Both jars bundle the bot's TypeScript source and manifests, but never the Bun binary or
-`node_modules`, which keeps the Paper jar around **0.6 MB**. A default `config.yml` is
-generated on first run.
+Both jars bundle the bot's TypeScript source and manifests but never the Bun binary or `node_modules`,
+which keeps the Paper jar around **0.6 MB**. A default `config.yml` is generated on first run.
+
+In-game, `/sx modes` lists everything and `/sx start minigames race` starts one; every command sits under `/sexidium` (alias `/sx`), needs `sexidium.admin`, and only one game runs at a time.
 
 ```bash
 ./gradlew :packages:core:test        # core suites only
@@ -143,13 +171,11 @@ scripts/test/run.sh                  # local gate: shell lint + golden trace + J
 scripts/remote.sh test               # the authoritative gate, on the deployment host
 ```
 
-The local gate **skips and still passes** any stage whose tooling is missing, so treat
-`scripts/remote.sh test` as the real answer. The build is configured for parallel execution,
-the build cache and the configuration cache (see the commentary in `gradle.properties`).
+The local gate **skips and still passes** any stage whose tooling is missing, so `scripts/remote.sh test`
+is the real answer. Parallel execution, build cache and configuration cache are on — see `gradle.properties`.
 
-For the single-server debug stack, `docker compose up --build` brings up a database plus a
-Paper container. For a full network, see
-[docs/operations/deployment.md](docs/operations/deployment.md).
+For the single-server debug stack, `docker compose up --build` brings up a database plus a Paper
+container. For a full network, see [docs/operations/deployment.md](docs/operations/deployment.md).
 
 ---
 
@@ -165,13 +191,11 @@ sexidium/
 ├── settings.gradle.kts           # :packages:core, :packages:module-paper, :module-velocity
 ├── gradle.properties             # parallel + build cache + configuration cache tuning
 ├── buildSrc/                     # SexidiumBuildUtil — shared build logic
-│
 ├── packages/
 │   ├── core/                     # ALL game logic, zero platform dependencies
 │   │   └── src/main/resources/   # config.yml, localization, db/migrations/*.sql
 │   ├── module-paper/             # Bukkit/Adventure SPI implementation
 │   └── module-velocity/          # Velocity proxy plugin: transfers, shared state
-│
 ├── bot/                          # TypeScript Discord bot (out-of-process child)
 │   └── src/
 │       ├── database/             # TypeORM entities + repositories
@@ -182,7 +206,6 @@ sexidium/
 │   ├── lib/                      # shell helpers: paper, velocity, java, plugins, yaml
 │   ├── remote/                   # Python deploy pipeline (Portainer-driven)
 │   └── test/                     # run.sh, fixtures, golden traces, fakes
-│
 ├── docker/                       # node entrypoints, provisioner, stack definition
 ├── docs/                         # architecture, gameplay, guides, interface, operations
 └── assets/                       # minigame, experience and UI icons
@@ -207,28 +230,6 @@ you must change the other in the same commit.
 
 ---
 
-## Quick start
-
-```bash
-git clone https://github.com/Ashu11-A/Sexidium.git
-cd Sexidium
-./gradlew build
-cp build/libs/paper/Sexidium-Paper-1.0.0.jar /path/to/server/plugins/
-```
-
-Start the server once to generate `plugins/Sexidium/config.yml`, then in-game:
-
-```
-/sx modes                 # list everything available
-/sx start minigames race  # start a mode with all online players
-/sx status                # what's running, and which phase
-/sx stop                  # end it and restore everyone
-```
-
-All commands live under `/sexidium` (alias `/sx`), require `sexidium.admin`, and only one game runs at a time.
-
----
-
 ## Contributing
 
 <!-- AI-AGENT-INSTRUCTION: COMMIT CONVENTION — every commit subject is `<emoji> <title>`, with one
@@ -241,9 +242,8 @@ All commands live under `/sexidium` (alias `/sx`), require `sexidium.admin`, and
      doc under docs/ in the same change, and run scripts/test/run.sh before proposing a diff. -->
 
 1. Read [docs/architecture/overview.md](docs/architecture/overview.md) — the core/adapter split rules all.
-2. Gameplay goes in `packages/core`. Adapters only translate.
-3. Follow the matching guide in [docs/guides/](docs/guides/) — there's one per extension point.
-4. Run `scripts/test/run.sh` locally and `scripts/remote.sh test` before a release; ship docs with code.
+2. Gameplay goes in `packages/core`; adapters only translate. [docs/guides/](docs/guides/) has one guide per extension point.
+3. Run `scripts/test/run.sh` locally and `scripts/remote.sh test` before a release; ship docs with code.
 
 <div align="center">
 <sub>Built on Paper and Velocity · Java 25 · TypeScript on Bun · named by committee, badly.</sub>
