@@ -154,9 +154,10 @@ public final class SceneTemplates {
   // ----- sample data (bake + tests) -----------------------------------------------------------
 
   /**
-   * The six normal hub cards, in {@code HubMenu.registerHubTabs} order so the baked label/icon at card
-   * {@code i} matches the action the in-game adapter routes card {@code i}'s clicks to. Icons mirror the
-   * runtime {@code MenuArt.ICON_*} identities (swords, emblem, book, portal, home, friends).
+   * The six normal hub cards, in {@link com.sexidium.core.menu.SidebarNav.NavSection} order — the same six
+   * domains the sidebar rail now navigates to, kept aligned so a baked card and its rail entry never
+   * disagree. Icons mirror the runtime {@code MenuArt.ICON_*} identities (swords, emblem, book, portal,
+   * home, friends). Sample data for {@code SceneBaker} and the scene tests; no screen renders it.
    */
   public static List<Tab> sampleHubTabsNormal() {
     return List.of(
