@@ -277,4 +277,4 @@ the timing invariants change. The state diagram in §2 and the timing table in �
 most likely to drift; both have code that enforces them (`DbWorldLeaseAuthority`, `NetworkSettings`),
 so if this page and the code disagree, the code is right and this page is a bug.
 
-Related: [architecture.md](architecture.md) · [deployment.md](deployment.md) · [experiences.md](experiences.md)
+Related: [architecture.md](../architecture/overview.md) · [deployment.md](deployment.md) · [experiences.md](../gameplay/experiences.md)

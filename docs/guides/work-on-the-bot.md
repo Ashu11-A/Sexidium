@@ -2,7 +2,7 @@
 
 You are working on Sexidium's **Discord bot** — a separate TypeScript codebase (`bot/`, runs on Bun,
 supervised as a child process by the Java server) — and/or its **typed RPC bridge** to the server.
-Reference: [networking-bot-ranks.md](networking-bot-ranks.md).
+Reference: [networking-bot-ranks.md](../operations/networking-bot-ranks.md).
 
 ## Key files
 
@@ -61,7 +61,7 @@ surface listed above.
 - [ ] New command imported in `commands/index.ts`; gated appropriately
 - [ ] No bot-side schema migrations; no SQLite assumptions
 - [ ] Bot behaves with the server offline
-- [ ] [networking-bot-ranks.md](networking-bot-ranks.md) updated in the same change
+- [ ] [networking-bot-ranks.md](../operations/networking-bot-ranks.md) updated in the same change
 
 ---
 *Keeping this current: tracks `bot/src/` layout, `contract.ts`, `BridgeRouter`/`BridgeClient`,

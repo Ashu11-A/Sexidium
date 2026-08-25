@@ -4,7 +4,7 @@ How Sexidium renders server-side UI (boss bars, scoreboard panels, popups/titles
 action bars, the BetterHud corner overlay, in-world decor) and localizes all player-facing text
 per client language. Chest GUIs are a separate domain — see
 [menu system & art](menus.md). Game-loop integration of these helpers
-is in [game framework](game-framework.md).
+is in [game framework](../architecture/game-framework.md).
 
 Core (`com.sexidium.core`) decides **what** to show and say; the `module-paper` and
 `module-neoforge` adapters decide **how** to render. A game never touches
@@ -459,7 +459,7 @@ probe exists because BetterHud's pack replaces the client's core text shaders an
 shader set from a hardcoded pack-format table that claims a wider range than the shaders it
 ships. On a version inside the claim but outside the reality the plugin loads fine, accepts our
 layouts fine, and the client draws unknown-character boxes (F62 in
-[known issues](known-issues.md)). When the probe fails the driver reports **no capabilities**,
+[known issues](../reference/known-issues.md)). When the probe fails the driver reports **no capabilities**,
 every surface renders on the sidebar, and the reason is logged once.
 
 It cannot fix BetterHud itself: the plugin sends its own pack regardless. Removing it is still

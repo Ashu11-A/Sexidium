@@ -46,7 +46,7 @@
 #     exatamente o que os servidores executam, e nada além disso.
 #
 #   Os nós bootam com `-jar /srv/sexidium/server/paper.jar --plugins <cwd>/plugins
-#   --add-extra-plugin-dir /srv/sexidium/server/plugins`. Ver docs/deployment.md.
+#   --add-extra-plugin-dir /srv/sexidium/server/plugins`. Ver docs/operations/deployment.md.
 #
 # TOPOLOGIA DE REDE  — um namespace por container, todos na rede `sexidium`.
 #   Cada nó tem a SUA pilha de rede e resolve os outros pelo DNS do compose
@@ -76,7 +76,7 @@
 #         SX_API_PORT_BASE=8800 existe para o lobby não colidir com o 8787/8788 do proxy.
 #         A 8788 NÃO é publicada: `module-velocity` não tem servidor de resource pack
 #         (a capability PACK_HOST não tem implementação), então a publicação antiga
-#         apontava para um listener que nunca existiu. Ver docs/known-issues.md.
+#         apontava para um listener que nunca existiu. Ver docs/reference/known-issues.md.
 #
 # SX_NODES é APPEND-ONLY. A identidade dos dados segue o NOME do nó (o volume
 # sexidium-<nó>), mas a porta segue o ÍNDICE na lista: remover um nó do meio

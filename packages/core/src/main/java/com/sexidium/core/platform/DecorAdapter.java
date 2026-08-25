@@ -7,7 +7,7 @@ import com.sexidium.core.decor.DecorProp;
  * {@code BlockDisplay}/{@code TextDisplay}/{@code Interaction}) that dress the lobby (an animated hub
  * centerpiece, NPC podiums, glowing pedestals). Mirrors {@link NpcAdapter}: the default is inert so the
  * core works without a decor backend, and NeoForge / headless tests inherit the no-op (decor is
- * additive Java flair, never a cross-play requirement — see {@code docs/graphical-interfaces-report.md}
+ * additive Java flair, never a cross-play requirement — see {@code docs/reference/tech-decisions.md}
  * §3.4: item/block displays are invisible on Bedrock, so this layer must degrade gracefully).
  */
 public interface DecorAdapter {

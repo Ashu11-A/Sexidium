@@ -2,9 +2,9 @@
 
 You are working on Sexidium's **competitive minigames** (Race, Gather & Duel, TNT War, Combat, Fugitive).
 A minigame is a timed, match-scoped `Game` with a winner — unlike experiences, it eliminates, ends, and
-tears its world down. Reference behaviour: [minigames.md](minigames.md) and
-[game-framework.md](game-framework.md). Everything is platform-agnostic core code; platform capabilities
-go through the SPI seams ([Prompt.platform.md](Prompt.platform.md)).
+tears its world down. Reference behaviour: [minigames.md](../gameplay/minigames.md) and
+[game-framework.md](../architecture/game-framework.md). Everything is platform-agnostic core code; platform capabilities
+go through the SPI seams ([Prompt.platform.md](add-a-platform-capability.md)).
 
 ## Key files
 
@@ -46,8 +46,8 @@ go through the SPI seams ([Prompt.platform.md](Prompt.platform.md)).
    and the lobby browser all pick the mode up automatically from the registry.
 4. **Config**: add a `minigames.<id>:` block. `configPath("key")` resolves to `minigames.<id>.key`
    (`MinigameMode.configPrefix()`); `duration-seconds` and `kit` are inherited `BaseTimedGame` keys.
-5. **Document**: [minigames.md](minigames.md) (phases, win detection, config) and
-   [commands.md](commands.md) if you add admin subcommands.
+5. **Document**: [minigames.md](../gameplay/minigames.md) (phases, win detection, config) and
+   [commands.md](../interface/commands.md) if you add admin subcommands.
 
 ## Match lifecycle rules
 
@@ -88,7 +88,7 @@ shipped or documented map, and an `/sx admin map <mode>` command branch (copy `C
 `/sx admin map edit` defines the *regions* (team zones, spawns) — it does not build the arena. For that,
 `scripts/init-paper.sh` installs FastAsyncWorldEdit and Axiom on the test server and
 `scripts/install-world-tools.sh` installs the client/desktop half; see the tooling table in
-[Prompt.worlds.md](Prompt.worlds.md#editing-a-map-tooling).
+[Prompt.worlds.md](work-on-worlds.md#editing-a-map-tooling).
 
 ## Checklist before you finish
 
@@ -98,9 +98,9 @@ shipped or documented map, and an `/sx admin map <mode>` command branch (copy `C
 - [ ] Win/kill/participation awards + `requestEnd()` wired; timeout path exists
 - [ ] HUD contributor installed via `installHud`
 - [ ] i18n keys in **both** `en.properties` and `pt.properties`
-- [ ] [minigames.md](minigames.md) + [commands.md](commands.md) updated in the same change
+- [ ] [minigames.md](../gameplay/minigames.md) + [commands.md](../interface/commands.md) updated in the same change
 - [ ] `./gradlew clean build` green, and `scripts/remote.sh test gradle scripts` green on the
-      deployment host ([deployment.md §8](deployment.md#8-running-tests-remotely))
+      deployment host ([deployment.md §8](../operations/deployment.md#8-running-tests-remotely))
 
 ---
 *Keeping this current: this prompt tracks `CoreGameRegistryInitializer`, the `modes/` base-class chain,

@@ -2,12 +2,12 @@
 
 You are working on Sexidium's **experience challenges** — the composable survival twists (Double Drops,
 Shared Life, Classic Skyblock, …) a player mixes into one persistent world. Read this whole file before
-touching code; the reference for how the pieces behave is [experiences.md](experiences.md). Everything
+touching code; the reference for how the pieces behave is [experiences.md](../gameplay/experiences.md). Everything
 below lives in the platform-agnostic core (`packages/core`) — a challenge **never** imports Bukkit or
-NeoForge types; platform work goes through the SPI seams (see [Prompt.platform.md](Prompt.platform.md)).
+NeoForge types; platform work goes through the SPI seams (see [Prompt.platform.md](add-a-platform-capability.md)).
 
 > **Adapting a YouTuber format?** Most challenges here come from one. Do the research and the
-> server-safe bounding first: [Prompt.youtube-challenge.md](Prompt.youtube-challenge.md).
+> server-safe bounding first: [Prompt.youtube-challenge.md](research-a-youtube-challenge.md).
 
 ## Key files
 
@@ -46,7 +46,7 @@ NeoForge types; platform work goes through the SPI seams (see [Prompt.platform.m
    Policy: **no artificial caps, fun-first** — cap only what would genuinely break the server, and keep
    those caps high (see the existing blocks for tone).
 6. **Implement the mechanic** using the lifecycle below.
-7. **Document** it: add a row to the challenge table in [experiences.md](experiences.md) and, if you added
+7. **Document** it: add a row to the challenge table in [experiences.md](../gameplay/experiences.md) and, if you added
    config keys, its config section.
 
 ## Lifecycle and the composition rules
@@ -61,14 +61,14 @@ Order per match: `attach(host)` → `register(ChallengeRegistry)` → `onStart(p
   sweeps, `guard().preservedValues()` for whole-chunk rewrites, `guard().isProtected(type)` when picking a
   type to erase. Do **not** keep a private protected list — world integrity (the End portal frame, bedrock,
   admin blocks) is decided once in `BlockGuard` for every challenge. See
-  [world integrity](experiences.md#world-integrity-blockguard).
+  [world integrity](../gameplay/experiences.md#world-integrity-blockguard).
 - **An experience is three worlds, so never assume `world()` is the one you are acting on.** Positioned
   calls route themselves (a position carries its world name), but the world-scoped ones —
   `isChunkLoaded`, `loadChunk`, `convertChunk`, `minBuildHeight`/`maxBuildHeight` — answer for whichever
   adapter you called them on. Get the right one with `world().inWorld(worldName)`, and key any per-chunk
   or per-position state by **world as well as coordinates**: the Nether's chunk (5, 5) is not the
   Overworld's. Getting this wrong does not fail loudly — the mode just quietly stops working past a
-  portal. See [all three dimensions](experiences.md#working-in-all-three-dimensions-worldadapterinworld).
+  portal. See [all three dimensions](../gameplay/experiences.md#working-in-all-three-dimensions-worldadapterinworld).
 - **Never handle loot/damage yourself if a pipeline exists.** Loot goes through `DropContributor`s
   (`registry.dropContributor(...)`, phases `GENERATE → TRANSFORM → FILTER → SINK` on the shared
   `DropContext`); damage through `DamageContributor`s; health through `HealthSource`s; block
@@ -114,7 +114,7 @@ Never create your own boss bar / action bar for status; the unified panel replac
 > **First, check you need a challenge at all.** If the world only has to *generate differently* — a
 > vanilla preset such as Superflat, Large Biomes or Amplified — that is **not** a challenge. Add an
 > `ExperienceWorldType` entry carrying a `WorldTerrain` instead (see
-> [Prompt.worlds.md](Prompt.worlds.md)); it needs no challenge class, no catalog row, no icon table entry
+> [Prompt.worlds.md](work-on-worlds.md)); it needs no challenge class, no catalog row, no icon table entry
 > and no config block. Write a challenge only when *your code* places the blocks.
 
 If the challenge **builds the world itself** (SkyBlock-style):
@@ -149,9 +149,9 @@ If the challenge **builds the world itself** (SkyBlock-style):
 - [ ] Every block edit validated through `BlockBreakService` (no private protected list)
 - [ ] Verified in the **Nether and the End**, not just the Overworld: world-scoped calls go through
       `inWorld(...)`, and per-chunk/per-position state is keyed by world
-- [ ] [experiences.md](experiences.md) table + config section updated **in the same change**
+- [ ] [experiences.md](../gameplay/experiences.md) table + config section updated **in the same change**
 - [ ] `./gradlew clean build` green, and `scripts/remote.sh test gradle scripts` green on the
-      deployment host ([deployment.md §8](deployment.md#8-running-tests-remotely))
+      deployment host ([deployment.md §8](../operations/deployment.md#8-running-tests-remotely))
 
 ---
 *Keeping this current: this prompt tracks `ChallengeCatalog`, `Challenge`, the `compose/` package,

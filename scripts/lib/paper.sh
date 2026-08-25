@@ -83,7 +83,7 @@ paper::defaults() {
     #
     # The plugin itself builds and runs on BOTH (paper-api is pinned to 26.1.2 and api-version to '26.1', so
     # Paper 26.2 loads it with legacy shims). Bump this back to 26.2 when upstream ships a betterhud_26_2
-    # overlay, and bump PACK_FORMAT / plugin.yml / build.gradle.kts with it — see docs/known-issues.md F62.
+    # overlay, and bump PACK_FORMAT / plugin.yml / build.gradle.kts with it — see docs/reference/known-issues.md F62.
     PAPER_VERSION="${PAPER_VERSION:-26.1.2}"
     # Minecraft 26.x refuses to boot on an older JVM (both 26.1.2 and 26.2 ask for java-runtime major 25).
     REQUIRED_JAVA="${REQUIRED_JAVA:-25}"

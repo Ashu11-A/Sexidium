@@ -19,7 +19,7 @@ set -Eeuo pipefail
 # no proxy. Its public contract is frozen -- the same environment variables, the
 # same defaults, the same `[init-paper]` log tag, the same foreground exec, and
 # no new required flags. Callers that depend on it: scripts/docker-paper-entry.sh,
-# docker-compose.yml, docs/networking-bot-ranks.md, docs/known-issues.md.
+# docker-compose.yml, docs/operations/networking-bot-ranks.md, docs/reference/known-issues.md.
 #
 # Behaviour is pinned by scripts/test/golden/init-paper.trace: every mutating
 # operation, in order. Run scripts/test/run.sh after touching anything here.

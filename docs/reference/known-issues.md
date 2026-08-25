@@ -5,8 +5,8 @@ old `docs/known-issues.md` (a snapshot from 12 reviewer passes): every finding b
 against the current source on 2026-06-13. The headline takeaway is that **all three old critical findings
 and most of the old highs are fixed** — persistence, open-match authorization, the world-name lease bugs,
 and the HTTP token bridge now hold. What remains is one high (an unauthenticated read endpoint), a small
-cluster of medium state-leak gaps, and a few low/latent code smells. See [game framework](game-framework.md),
-[platform abstraction](platform-and-adapters.md), and [networking & ranks](networking-bot-ranks.md) for the
+cluster of medium state-leak gaps, and a few low/latent code smells. See [game framework](../architecture/game-framework.md),
+[platform abstraction](../architecture/platform-and-adapters.md), and [networking & ranks](../operations/networking-bot-ranks.md) for the
 subsystems referenced here.
 
 > **Verification scope.** This pass re-read the core anchors only (`com.sexidium.core`). The Paper adapter
@@ -173,10 +173,10 @@ fixed or open, until re-verified against the current modules.
 - **All Paper findings** (old C1/F30–F35/F50–F52): the adapter is now `packages/module-paper` on
   Multiverse-Core v5.7 with `AbstractWorldControl`; old line numbers refer to the removed
   `PaperWorldLeaseService`. Re-verify the temp-world dispose/lease lifecycle and the inventory-serializer
-  swallow-on-corruption (old F50). See [adapters: Paper](platform-and-adapters.md).
+  swallow-on-corruption (old F50). See [adapters: Paper](../architecture/platform-and-adapters.md).
 - **All NeoForge findings** (old C3/C4/H8–H12/F25–F29/F45–F49/F53/F60): NeoForge is mid-migration; world
   naming, inventory serialization, `setHealthScale`, and event-bridge parity all need a fresh pass against
-  the current module. See [adapters: NeoForge](platform-and-adapters.md).
+  the current module. See [adapters: NeoForge](../architecture/platform-and-adapters.md).
 - **NeoForge is not in the tree at all right now** (`packages/` holds only `core` and `module-paper`), so
   every seam added since the split is **core + Paper only** and NeoForge inherits the inert `default`. The
   current list: `GameEvents.PlayerJumpGameEvent` (never raised), `PlayerAdapter#duplicateNearbyEntities` /
@@ -188,7 +188,7 @@ fixed or open, until re-verified against the current modules.
   consumption): both in `bot/`, not re-read. The Java side moved account linking to the token-gated
   `/auth/link` endpoint (`ApiServer#handleAuthLink`), which removes the bot's need to write the DB directly
   — confirm the bot actually routes through it now rather than still opening `sexidium.db`. See
-  [networking & ranks](networking-bot-ranks.md).
+  [networking & ranks](../operations/networking-bot-ranks.md).
 - **Old C1 dispose leak** specifically: re-test a full match-world create→dispose→reacquire round-trip on
   the current Paper adapter, since no test covered it at the time.
 

@@ -44,7 +44,7 @@ import java.util.Map;
  * Geyser, so glyph art is a <b>Java-only enhancement</b>. Every renderer must fall back: Bedrock gets
  * the Cumulus Form, a Java client that declined the pack gets the plain chest. The platform adapter
  * only injects glyph/shift markup for players it knows loaded the pack; everyone else sees the
- * material-icon menu. See {@code docs/graphical-interfaces-report.md} §3.2.</p>
+ * material-icon menu. See {@code docs/reference/tech-decisions.md} §A.3.</p>
  */
 public final class MenuArt {
   /** Resource-pack namespace that owns every Sexidium font/texture/model. */

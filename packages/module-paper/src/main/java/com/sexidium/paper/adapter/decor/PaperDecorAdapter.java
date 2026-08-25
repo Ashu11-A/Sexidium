@@ -55,7 +55,7 @@ import java.util.logging.Level;
  * and they log-spam) — so every decor entity is hidden from Bedrock/Geyser players (on spawn and on
  * join) via {@link Player#hideEntity}. Java clients that declined the resource pack still see the
  * sensible vanilla base item; only pack-loaded Java clients see the bespoke {@code item_model}. This
- * keeps the layer additive Java flair, per {@code docs/graphical-interfaces-report.md} §3.4.</p>
+ * keeps the layer additive Java flair, per {@code docs/reference/tech-decisions.md} §A.3.</p>
  */
 public final class PaperDecorAdapter implements DecorAdapter, Listener {
   private static final String DECOR_TAG = "sx_decor";

@@ -23,7 +23,7 @@ from util import RemoteError, UsageError  # noqa: E402
 
 EPILOG = """\
 exit codes: 0 ok · 1 falha operacional · 2 uso · 3 auth (401/403) · 4 Portainer
-inalcançável · 5 pré-condição ausente. Documentação: docs/deployment.md
+inalcançável · 5 pré-condição ausente. Documentação: docs/operations/deployment.md
 """
 
 

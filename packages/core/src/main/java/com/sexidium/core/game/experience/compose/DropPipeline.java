@@ -15,7 +15,7 @@ import java.util.List;
  * {@code Challenge.register}; the host runs every break/sweep/death through here so layered
  * transforms (a multiplier over a remap) compose on one shared list. Registration/ordering live in
  * {@link ContributorRegistry}; this class adds the loot-emission sink. See
- * {@code docs/experience-composition.md}.
+ * {@code docs/gameplay/experiences.md}.
  */
 public final class DropPipeline extends ContributorRegistry<DropContributor> {
   private final ExperienceHost host;

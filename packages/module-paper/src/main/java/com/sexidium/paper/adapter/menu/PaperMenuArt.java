@@ -12,7 +12,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
  * The Paper half of the negative-space art layer: Adventure {@link TagResolver}s that turn the
  * platform-agnostic {@code <glyph:id>} and {@code <shift:n>} markup into the real Sexidium font glyphs
  * and spacers (the technique behind Nexo/ItemsAdder custom GUIs, owned natively here). See
- * {@link MenuArt} for the data and {@code docs/menu-system.md} for the pipeline.
+ * {@link MenuArt} for the data and {@code docs/interface/menus.md} for the pipeline.
  *
  * <p>Two MiniMessage instances back the graceful fallback: {@link #ART} renders the tags to font
  * components (for a viewer who loaded the resource pack), {@link #PLAIN} drops them entirely (so a

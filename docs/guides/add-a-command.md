@@ -3,7 +3,7 @@
 You are working on Sexidium's **command tree** (`/sx`, `/sexidium`, plus the global aliases `/menu`,
 `/exit`/`/leave`, `/lobby`, `/friend`). One platform-agnostic service owns every command; the adapters
 only forward raw `String[]` argv — so a command added in core exists identically on Paper and NeoForge.
-Reference: [commands.md](commands.md).
+Reference: [commands.md](../interface/commands.md).
 
 ## Key files
 
@@ -48,7 +48,7 @@ Reference: [commands.md](commands.md).
 - GUI-first: if a command only exists to open/drive a menu, keep the logic in `MenuService`/domain
   services and make the command a thin call — the same rule the codebase already follows
   (`/sx experience` opens the GUI).
-- Update [commands.md](commands.md) — including its quick-reference tables — in the same change.
+- Update [commands.md](../interface/commands.md) — including its quick-reference tables — in the same change.
 
 ## Checklist
 
@@ -56,7 +56,7 @@ Reference: [commands.md](commands.md).
 - [ ] `suggest` branch added with real candidates
 - [ ] i18n keys in **both** lang files (or intentional inline MiniMessage)
 - [ ] Console/`requirePlayer` handled; input escaped
-- [ ] [commands.md](commands.md) updated in the same change
+- [ ] [commands.md](../interface/commands.md) updated in the same change
 
 ---
 *Keeping this current: tracks `CoreCommandService`, the handler classes, `CommandContext` and the adapter

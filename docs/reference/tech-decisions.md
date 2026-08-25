@@ -21,10 +21,10 @@ rejected and why, and what is deferred — so the same options aren't re-litigat
 
 The single load-bearing finding: **no UI surface renders richly on all three targets.**
 Forms are invisible to Java; native `Screen`s and font-pack GUIs are invisible to
-Bedrock. So menu *logic* lives in `core` ([`MenuView`](../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java),
+Bedrock. So menu *logic* lives in `core` ([`MenuView`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java),
 a sparse `slot → MenuButton` map) and each adapter renders it with whatever its
-target supports. See [menu system](menus.md) for the shipped architecture and
-[platform abstraction](platform-and-adapters.md) for the adapter seams.
+target supports. See [menu system](../interface/menus.md) for the shipped architecture and
+[platform abstraction](../architecture/platform-and-adapters.md) for the adapter seams.
 
 ---
 
@@ -53,9 +53,9 @@ by spawning a temporary fake chest block and force-opening it. Consequences a
 skeptic must accept: it **silently fails in void/lobby space** (no block to place),
 Geyser **can't distinguish left vs right click**, and touch players **can't hover
 items** (lore tooltips unreadable). So Sexidium menus are **single-tap, click-only**
-with info in item *names* not lore — see [menu system](menus.md). NeoForge
+with info in item *names* not lore — see [menu system](../interface/menus.md). NeoForge
 renders the same `MenuView` as a vanilla chest in
-[`NeoForgeMenuAdapter`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java);
+[`NeoForgeMenuAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java);
 no GUI library is shaded on either side (`core` holds only the abstract model).
 
 ### A.2 Bedrock Cumulus Forms — the Bedrock answer `[IMPLEMENTED, Paper only]`
@@ -63,14 +63,14 @@ no GUI library is shaded on either side (`core` holds only the abstract model).
 The correct touch UI: a native Bedrock form (tappable buttons with images, dropdowns,
 toggles, sliders), command-free and **position-independent** (works in lobby/void
 where chest GUIs fail). Shipped on the **Paper adapter only** via
-[`PaperFormRenderer`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java),
+[`PaperFormRenderer`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java),
 which projects the same `MenuView` through
-[`MenuForms`](../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java)
+[`MenuForms`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java)
 (`MenuForms.java:30` — clickable buttons → form buttons in slot order; `null`-handler
 buttons → body text). Selection is gated inline, **not** by a generic router:
 `PaperMenuAdapter#open` routes to the form only when
 `player.isBedrock() && PaperGeyser.bedrockUiAvailable()`
-([`PaperMenuAdapter.java:86`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java)),
+([`PaperMenuAdapter.java:86`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java)),
 else the chest renders.
 
 > **Correction vs old GUI report.** Forms are **Paper-only**, not the cross-loader
@@ -91,13 +91,13 @@ Floodgate when present and the Geyser API otherwise; text is flattened to plain 
 
 Sexidium renders its **own** menu art natively (no third-party pack plugin): custom
 item-model icons and Nexo-style shift/bitmap-font titles authored under
-[`core/menu/scene`](../packages/core/src/main/java/com/sexidium/core/menu/scene) and
-served by an auto-generated pack ([`MenuArt`](../packages/core/src/main/java/com/sexidium/core/menu/MenuArt.java),
-[`SexidiumResourcePack`](../packages/core/src/main/java/com/sexidium/core/menu/pack/SexidiumResourcePack.java)).
+[`core/menu/scene`](../../packages/core/src/main/java/com/sexidium/core/menu/scene) and
+served by an auto-generated pack ([`MenuArt`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuArt.java),
+[`SexidiumResourcePack`](../../packages/core/src/main/java/com/sexidium/core/menu/pack/SexidiumResourcePack.java)).
 This is **Java-only by design** with a graceful fallback: Geyser doesn't convert Java
 packs and Bedrock has no per-codepoint custom fonts, so a Bedrock player would see
 tofu — but Bedrock players get a Form instead (A.2), and a Java player who declines
-the pack gets plain vanilla items. See [menu art reference](menus.md).
+the pack gets plain vanilla items. See [menu art reference](../interface/menus.md).
 
 ### A.4 Negative-space font GUIs (ItemsAdder / Oraxen / Nexo / CraftEngine) — `REJECTED`
 
@@ -159,16 +159,16 @@ with an optional softdepend when the richer library happens to be installed.
 The headline mechanic, **zero-dependency**. Each rank class maps to one scoreboard
 team whose color drives the above-head nametag *and* tablist color, and whose
 name carries a priority digit so the best rank sorts to the top of the tab list.
-Implemented in [`RankTagService`](../packages/core/src/main/java/com/sexidium/core/rank/RankTagService.java)
-over the platform [`RankTagAdapter`](../packages/core/src/main/java/com/sexidium/core/platform/RankTagAdapter.java)
+Implemented in [`RankTagService`](../../packages/core/src/main/java/com/sexidium/core/rank/RankTagService.java)
+over the platform [`RankTagAdapter`](../../packages/core/src/main/java/com/sexidium/core/platform/RankTagAdapter.java)
 seam: Paper uses Bukkit `Team`, NeoForge drives the vanilla `Scoreboard`/`PlayerTeam`
-reflectively in [`NeoForgeRankTagAdapter`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/ui/NeoForgeRankTagAdapter.java).
+reflectively in [`NeoForgeRankTagAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/ui/NeoForgeRankTagAdapter.java).
 The seven ranks (worst→best `OMEGA < EPSILON < DELTA < GAMMA < BETA < ALPHA < SIGMA`,
 each with a hex color) live in
-[`RankClass`](../packages/core/src/main/java/com/sexidium/core/rank/RankClass.java);
+[`RankClass`](../../packages/core/src/main/java/com/sexidium/core/rank/RankClass.java);
 the team id is `"<priority>_<name>"` (`RankTagService.teamName`). The class is derived
 from the player's **summed** score across all linked Minecraft names — see
-[networking, bot & ranks](networking-bot-ranks.md). **TAB** is the only nametag
+[networking, bot & ranks](../operations/networking-bot-ranks.md). **TAB** is the only nametag
 library on both loaders and is a possible future RGB/animation polish layer, but it
 is config-driven on NeoForge and its API values are temporary, so native teams remain
 the source of truth.
@@ -177,7 +177,7 @@ the source of truth.
 
 Shipped as an optional Paper softdepend (`compileOnly("io.github.toxicity188:BetterHud-bukkit-api:2.0.0")`)
 behind the gate in
-[`BetterHudLink`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/ui/betterhud/BetterHudLink.java).
+[`BetterHudLink`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/ui/betterhud/BetterHudLink.java).
 It is a **driver**, not a feature: any challenge or game mode declares a `HudSurfaceSpec` and this
 renders it in a screen corner — a surface vanilla Minecraft does not have — for the players it can
 reach, while core's `SidebarHudDriver` renders the same declaration on the scoreboard for everyone
@@ -264,7 +264,7 @@ on Paper, vanilla packets/entities on NeoForge via `NeoForgeReflector`).
   core `MobAbility` descriptors.
 - **Origins / Apoli** — mod-side only; the *model* (power = attribute modifiers + tick
   action + cooldown + condition) is small and reimplemented in core, mapping ~1:1 to
-  Sexidium kits and [composable experiences](experiences.md). Adapters own
+  Sexidium kits and [composable experiences](../gameplay/experiences.md). Adapters own
   `AttributeInstance.addModifier` (Paper) / `AttributeSupplier` + `PlayerTickEvent`
   (NeoForge).
 - **GUI libs (InventoryFramework / Triumph-GUI), NBT-API, particle libs** — Bukkit-only;
@@ -274,8 +274,8 @@ on Paper, vanilla packets/entities on NeoForge via `NeoForgeReflector`).
 ### B.5 Gameplay mechanics worth building (native, no dep)
 
 Reference-only mods (low downloads or single-loader) that inform native
-implementations, mapped to existing modes — see [minigames](minigames.md) and
-[experiences](experiences.md): **grappling hook** (raycast → per-tick velocity pull,
+implementations, mapped to existing modes — see [minigames](../gameplay/minigames.md) and
+[experiences](../gameplay/experiences.md): **grappling hook** (raycast → per-tick velocity pull,
 no Paper lib exists), **dodge-roll / air-dash with i-frames**, **double-jump**
 (`setAllowFlight` trick on Paper / `jumpsUsed` counter on NeoForge), **custom on-hit
 enchant abilities** (PDC tags on Paper / real `EnchantmentEffectComponents` on
@@ -290,9 +290,9 @@ fit the existing `BaseTimedGame` and `releasePlayerUi`/`restorePlayerUi` lifecyc
 ## Keeping this current
 
 This doc is a derived decision-log; the **code is the source of truth**. Authoritative
-files: menu rendering — [`MenuView`](../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java),
-[`MenuForms`](../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java),
-[`PaperFormRenderer`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java),
+files: menu rendering — [`MenuView`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java),
+[`MenuForms`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java),
+[`PaperFormRenderer`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java),
 `PaperMenuAdapter`, `NeoForgeMenuAdapter`; ranks — `RankTagService`/`RankClass`/
 `NeoForgeRankTagAdapter`; HUD — `BetterHudDriver`; deps — `packages/*/build.gradle.kts`.
 Update **this file in the same change** that touches them. Triggers: a menu surface

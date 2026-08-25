@@ -10,7 +10,7 @@ roster in exactly one of three states) owned by `LobbyManager`. Worlds live in
 lease policy engine) plus the `WorldNaming` codec; lobby NPCs live in
 `com.sexidium.core.npc`. All logic is platform-agnostic core — the Paper and
 NeoForge adapters are thin command/event pass-throughs (see
-[neoforge-paper parity](game-framework.md)) and supply only world/NPC/menu SPI
+[neoforge-paper parity](../architecture/game-framework.md)) and supply only world/NPC/menu SPI
 backends.
 
 > The old `com.sexidium.core.social` package (`PartyManager`/`Party`), the
@@ -19,7 +19,7 @@ backends.
 > exist on the unified path. Where this doc disagrees with older docs, the code
 > wins.
 
-Related: [game framework](game-framework.md) · [experiences](experiences.md) · [menus](menus.md) · [commands](commands.md)
+Related: [game framework](../architecture/game-framework.md) · [experiences](experiences.md) · [menus](../interface/menus.md) · [commands](../interface/commands.md)
 
 ---
 
@@ -467,7 +467,7 @@ a click back to `core.hotbar().handleClick(...)`. Only the LOBBY scope carries i
 so entering a match strips them and a match kit can't return to the lobby. The full
 model (shared `UiItem`, `HotbarItem` subclasses, the single Paper materializer, and
 how to add an item) is documented in
-[UI interaction system](ui-interaction-system.md). The hotbar + crafting lock are
+[UI interaction system](../interface/ui-interaction-system.md). The hotbar + crafting lock are
 **Paper-only**; NeoForge parity is outstanding.
 
 `LobbyHud` is a platform-agnostic per-player scoreboard for lobby players: total
@@ -545,7 +545,7 @@ The code is the source of truth; this doc is a derived view. Authoritative files
 (`AbstractWorldControl`, `WorldNaming`, `WorldKind`, `LobbyGuardPolicy`,
 `LobbyHud`, `LobbyBundle`, `WorldClone`),
 `com.sexidium.core.npc.NpcManager`, `com.sexidium.core.world.hotbar.*`
-(`HotbarController` + items — see [UI interaction system](ui-interaction-system.md)),
+(`HotbarController` + items — see [UI interaction system](../interface/ui-interaction-system.md)),
 the Paper/NeoForge world+guard backends,
 `CoreCommandService` (`handleLobby`/`handleFriend`/`handleJoin`),
 `GameManager.joinInProgress`, and `config.yml`. **Update this doc in the same

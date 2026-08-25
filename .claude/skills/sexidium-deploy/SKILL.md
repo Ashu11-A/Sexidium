@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Grep, Glob
 
 # Deploying Sexidium on Portainer
 
-The full reference is [`docs/deployment.md`](../../../docs/deployment.md) (13 sections). This skill is
+The full reference is [`docs/operations/deployment.md`](../../../docs/operations/deployment.md) (13 sections). This skill is
 the operational layer: which command to reach for, what will bite you, and what must never be done
 without asking. **When the two disagree, the code wins — check it.**
 
@@ -182,7 +182,7 @@ no-disconnect guarantee is designed for, but not yet field-proven.
 
 ## Where to look next
 
-| Question | Section of `docs/deployment.md` |
+| Question | Section of `docs/operations/deployment.md` |
 |---|---|
 | What runs where, adding a worker | §1 Topology |
 | Volume layout, what can't be shared | §2 |

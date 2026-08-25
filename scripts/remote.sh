@@ -19,7 +19,7 @@ set -Eeuo pipefail
 # em Python de stdlib pura -- HTTP, tar e JSON em bash seriam um exercício de
 # escrever mal o que a stdlib já faz certo.
 #
-# Documentação: docs/deployment.md
+# Documentação: docs/operations/deployment.md
 # -----------------------------------------------------------------------------
 
 SX_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

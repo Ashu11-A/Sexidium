@@ -38,7 +38,7 @@ dependencies {
   // shims, so building against 26.1.2 yields one artifact that runs on 26.1.2 AND 26.2 — where building
   // against 26.2 would hard-fail on 26.1.2. 26.1.2 is the pin because it is the Minecraft version
   // BetterHud's newest shader overlay actually matches; see PAPER_VERSION in scripts/init-paper.sh and
-  // F62 in docs/known-issues.md. Keep in step with plugin.yml's api-version.
+  // F62 in docs/reference/known-issues.md. Keep in step with plugin.yml's api-version.
   compileOnly("io.papermc.paper:paper-api:26.1.2.build.74-stable")
   // BetterHud 2.0.0 — the API artifact AND the runtime jar scripts/init-paper.sh installs, verified
   // byte-identical for the members BetterHudApi calls. Three things about 2.0.0 are load-bearing:

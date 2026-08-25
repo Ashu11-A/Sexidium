@@ -30,7 +30,7 @@ velocity::defaults() {
     # The SHARED INSTALL: one paper.jar, one set of plugin jars, one libraries/
     # versions/cache tree for every backend. Everything a node owns is its working
     # directory (world/, logs/, plugins/<Plugin>/ data folders, server.properties)
-    # -- see docs/deployment.md.
+    # -- see docs/operations/deployment.md.
     #
     # The artifact cache above and this are different things and both are needed:
     # the cache is keyed by sha1(url) and answers "did we already download these

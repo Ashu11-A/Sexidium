@@ -33,4 +33,4 @@ in-game under a name this folder also uses is not silently clobbered on the next
 
 Finished *maps* (a whole world, not a build) do not belong here — those are zipped world folders under
 `assets/worlds/**`, bundled into the jar and extracted at runtime. See
-[`docs/Prompt.worlds.md`](../../docs/Prompt.worlds.md).
+[`docs/guides/work-on-worlds.md`](../../docs/guides/work-on-worlds.md).

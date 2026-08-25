@@ -19,7 +19,7 @@
 # só um diretório de trabalho em $NETWORK_DIR/<nó>: mundos, logs, data folders e as
 # configs que o Paper reescreve a cada boot. Esse diretório é um VOLUME próprio de cada
 # container, montado no mesmo caminho aqui e no `init`. Ver run_backend e
-# docs/deployment.md.
+# docs/operations/deployment.md.
 #
 # O mesmo vale para os TEMPLATES de mapa de minigame: existe uma árvore só,
 # $SX_SHARED_MAPS/<bundle>/<id>, semeada pelo `init` a partir do jar, e cada nó chega

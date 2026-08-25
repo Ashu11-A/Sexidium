@@ -9,7 +9,7 @@ scripts/remote.sh update    # the day-to-day command: sync + provision + rolling
 scripts/remote.sh status    # the network validation (13 checks)
 ```
 
-`scripts/remote.sh` is the remote twin of [`scripts/net.sh`](../scripts/net.sh) (which runs the
+`scripts/remote.sh` is the remote twin of [`scripts/net.sh`](../../scripts/net.sh) (which runs the
 same network as local processes): same verbs, different execution substrate. Everything it does
 is also visible and doable in the Portainer dashboard — the CLI exists so the sequence is
 correct and repeatable, not to hide the dashboard.
@@ -19,7 +19,7 @@ correct and repeatable, not to hide the dashboard.
 ## 1. Topology
 
 One image (`eclipse-temurin:25-jdk`), one data volume, and one variable — `SX_NODE` — deciding
-what each container is ([`docker/node-entry.sh`](../docker/node-entry.sh)).
+what each container is ([`docker/node-entry.sh`](../../docker/node-entry.sh)).
 
 ```
               players :26001  ← public; the internet-facing proxy forwards to
@@ -42,7 +42,7 @@ what each container is ([`docker/node-entry.sh`](../docker/node-entry.sh)).
 ```
 
 - **`init` ending in `Exited (0)` is the correct state**, not a failure. It runs
-  [`docker/provision.sh`](../docker/provision.sh), writes `server/.provisioned`, and stops. Nodes
+  [`docker/provision.sh`](../../docker/provision.sh), writes `server/.provisioned`, and stops. Nodes
   wait for that stamp before starting a JVM.
 - **Each container has its own network namespace.** Backends bind `0.0.0.0` inside a network
   that publishes nothing, and the proxy dials them by compose DNS name (`lobby:25566`, …). The
@@ -59,11 +59,11 @@ what each container is ([`docker/node-entry.sh`](../docker/node-entry.sh)).
   it has nowhere to come from. The bundled **map templates** are shared the same way and for the same
   reason (§2.3); live worlds never are (§2.2).
 
-Source of truth: [`docker/stack.sexidium.yml`](../docker/stack.sexidium.yml).
+Source of truth: [`docker/stack.sexidium.yml`](../../docker/stack.sexidium.yml).
 
 ### 1.1 Adding a worker
 
-Adding `worker-4` is four edits in [`docker/stack.sexidium.yml`](../docker/stack.sexidium.yml) and one
+Adding `worker-4` is four edits in [`docker/stack.sexidium.yml`](../../docker/stack.sexidium.yml) and one
 deploy. The node's identity is entirely its name and its `SX_NODE`; nothing is copied from a sibling.
 
 1. **Append** it to `SX_NODES` (`"lobby worker-1 worker-2 worker-3 worker-4"`). Append-only: inserting
@@ -316,7 +316,7 @@ Two files, both gitignored, both `chmod 600`, neither ever committed:
 
 | File | Holds | Created by |
 |------|-------|-----------|
-| `scripts/remote.env` | `SX_PORTAINER_URL`, `SX_PORTAINER_KEY`, `SX_PORTAINER_ENDPOINT` | you, from [`scripts/remote.env.example`](../scripts/remote.env.example) |
+| `scripts/remote.env` | `SX_PORTAINER_URL`, `SX_PORTAINER_KEY`, `SX_PORTAINER_ENDPOINT` | you, from [`scripts/remote.env.example`](../../scripts/remote.env.example) |
 | `scripts/remote.secrets.json` | `db_password`, `api_token`, `forwarding_secret`, `db_root_password` | `remote.sh` on first use |
 
 ```bash
@@ -456,7 +456,7 @@ The jar now lives in a **versioned store** and each node reaches its own build t
   on the network nodes** — in-world editing with `//wand` or Axiom is not available in production.
   BetterHud is not installed on the network either (`SX_SKIP_BETTERHUD=1`), which costs players
   nothing: `hud.betterhud.enabled` is already forced `false` on every network node, so those readouts
-  render on the scoreboard sidebar (see F62/F67 in [known-issues.md](known-issues.md)).
+  render on the scoreboard sidebar (see F62/F67 in [known-issues.md](../reference/known-issues.md)).
 
 Retention keeps the last `SX_BUILD_RETENTION` (default 10) builds, **plus** anything any node still
 references through `build=` or `previous=`, **plus** anything promoted in the last 30 days. GC runs
@@ -634,7 +634,7 @@ scripts/remote.sh test                 # scripts + gradle + bot
 scripts/remote.sh test gradle --no-sync
 ```
 
-An ephemeral `sexidium-test` container runs [`docker/test-entry.sh`](../docker/test-entry.sh)
+An ephemeral `sexidium-test` container runs [`docker/test-entry.sh`](../../docker/test-entry.sh)
 on the same volume: `scripts/test/run.sh`, `./gradlew build` (the JUnit suites run as part of
 `build`), and `bun install && bun run check` in `bot/`. Reports land in
 `/srv/build/test-run/test-reports/<run-id>/`. The container is deleted afterwards, always.
@@ -772,7 +772,7 @@ is ignored rather than fatal — misconfigured retention must never be why a nod
   Paper or Velocity change stops at "halt, drain, leave stopped, alert", never at an automatic
   downgrade.
 - **A database migration that already ran is not undone by deploying older code.** Check
-  `docs/networking-bot-ranks.md` for the schema history before rolling back across one.
+  `docs/operations/networking-bot-ranks.md` for the schema history before rolling back across one.
 
 ---
 

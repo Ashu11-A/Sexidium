@@ -1,9 +1,9 @@
 # Game Framework
 
 The game framework is the platform-agnostic **match engine** in
-[`packages/core/src/main/java/com/sexidium/core/game`](../packages/core/src/main/java/com/sexidium/core/game)
-(plus the [`event`](../packages/core/src/main/java/com/sexidium/core/event) package and
-[`util/Countdown`](../packages/core/src/main/java/com/sexidium/core/util/Countdown.java)). It registers
+[`packages/core/src/main/java/com/sexidium/core/game`](../../packages/core/src/main/java/com/sexidium/core/game)
+(plus the [`event`](../../packages/core/src/main/java/com/sexidium/core/event) package and
+[`util/Countdown`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java)). It registers
 game *modes*, launches a mode as a *match* bound to a (usually temporary) world, ticks
 countdowns/timers, routes native Minecraft events into the active game(s), and tears everything down
 when a match ends or a player leaves. Nothing in this package references Bukkit or NeoForge — games
@@ -11,8 +11,8 @@ talk only to the platform SPI (`ServerAdapter`, `PlayerAdapter`, `WorldAdapter`,
 model records, so the identical engine runs on both the Paper and NeoForge adapters.
 
 **Scope.** This doc covers the **engine only**. For the concrete game *content* see
-[minigames.md](minigames.md) (the 5 minigames) and
-[experiences.md](experiences.md) / [experiences.md](experiences.md)
+[minigames.md](../gameplay/minigames.md) (the 5 minigames) and
+[experiences.md](../gameplay/experiences.md) / [experiences.md](../gameplay/experiences.md)
 (experience challenges and their composition pipeline, which are owned by `ExperienceGame`, not the
 framework). For the SPI itself see [platform-and-adapters.md](platform-and-adapters.md).
 
@@ -120,20 +120,20 @@ flowchart TD
 
 | Class | File | Role |
 |-------|------|------|
-| `Game` | [`Game.java`](../packages/core/src/main/java/com/sexidium/core/game/Game.java) | Interface every mode implements. |
-| `AbstractGame` | [`AbstractGame.java`](../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java) | Base class: player set, state, timer/overlay tracking, generic snapshot, cleanup. |
-| `BaseTimedGame` | [`modes/BaseTimedGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java) | Timed-elimination lifecycle. Base of `MinigameMode` (not of `ExperienceGame`). |
-| `MinigameMode` | [`modes/MinigameMode.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) | `BaseTimedGame` + team allocation + mode-arg parsing; `configPrefix()` = `minigames.<id>`. |
-| `GameFactory` | [`GameFactory.java`](../packages/core/src/main/java/com/sexidium/core/game/GameFactory.java) | `@FunctionalInterface`: `Game create(GameContext, String requestedModeId, List<String> modeArgs)`. |
-| `GameModeDescriptor` | [`GameModeDescriptor.java`](../packages/core/src/main/java/com/sexidium/core/game/GameModeDescriptor.java) | Metadata record (id, category, displayName, minPlayers, aliases, hologramLines). |
-| `GameRegistry` | [`GameRegistry.java`](../packages/core/src/main/java/com/sexidium/core/game/GameRegistry.java) | Maps normalized id/aliases → descriptor + factory. |
-| `CoreGameRegistryInitializer` | [`CoreGameRegistryInitializer.java`](../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java) | Registers the 5 minigames + the single `experience` mode. |
-| `GameManager` | [`GameManager.java`](../packages/core/src/main/java/com/sexidium/core/game/GameManager.java) | Orchestrator (implements `MatchLauncher`): start/launch/end, player index, reconnect. |
-| `GameContext` | [`GameContext.java`](../packages/core/src/main/java/com/sexidium/core/game/GameContext.java) | Dependency carrier handed to every game. |
-| `ActiveMatch` | [`ActiveMatch.java`](../packages/core/src/main/java/com/sexidium/core/game/ActiveMatch.java) | Immutable handle bundling matchId, mode, game, world lease. |
-| `GameState` | [`GameState.java`](../packages/core/src/main/java/com/sexidium/core/game/GameState.java) | `IDLE`, `RUNNING`, `STANDBY`, `ENDED`. |
-| `Countdown` | [`util/Countdown.java`](../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) | Self-contained 1-second-tick boss-bar timer. |
-| `GameEvent` / `GameEventRouter` | [`event/`](../packages/core/src/main/java/com/sexidium/core/event) | Sealed event hierarchy + dispatcher. |
+| `Game` | [`Game.java`](../../packages/core/src/main/java/com/sexidium/core/game/Game.java) | Interface every mode implements. |
+| `AbstractGame` | [`AbstractGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java) | Base class: player set, state, timer/overlay tracking, generic snapshot, cleanup. |
+| `BaseTimedGame` | [`modes/BaseTimedGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java) | Timed-elimination lifecycle. Base of `MinigameMode` (not of `ExperienceGame`). |
+| `MinigameMode` | [`modes/MinigameMode.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) | `BaseTimedGame` + team allocation + mode-arg parsing; `configPrefix()` = `minigames.<id>`. |
+| `GameFactory` | [`GameFactory.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameFactory.java) | `@FunctionalInterface`: `Game create(GameContext, String requestedModeId, List<String> modeArgs)`. |
+| `GameModeDescriptor` | [`GameModeDescriptor.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameModeDescriptor.java) | Metadata record (id, category, displayName, minPlayers, aliases, hologramLines). |
+| `GameRegistry` | [`GameRegistry.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameRegistry.java) | Maps normalized id/aliases → descriptor + factory. |
+| `CoreGameRegistryInitializer` | [`CoreGameRegistryInitializer.java`](../../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java) | Registers the 5 minigames + the single `experience` mode. |
+| `GameManager` | [`GameManager.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameManager.java) | Orchestrator (implements `MatchLauncher`): start/launch/end, player index, reconnect. |
+| `GameContext` | [`GameContext.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameContext.java) | Dependency carrier handed to every game. |
+| `ActiveMatch` | [`ActiveMatch.java`](../../packages/core/src/main/java/com/sexidium/core/game/ActiveMatch.java) | Immutable handle bundling matchId, mode, game, world lease. |
+| `GameState` | [`GameState.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameState.java) | `IDLE`, `RUNNING`, `STANDBY`, `ENDED`. |
+| `Countdown` | [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) | Self-contained 1-second-tick boss-bar timer. |
+| `GameEvent` / `GameEventRouter` | [`event/`](../../packages/core/src/main/java/com/sexidium/core/event) | Sealed event hierarchy + dispatcher. |
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TD
 
 ### `Game` (the contract)
 
-[`Game.java`](../packages/core/src/main/java/com/sexidium/core/game/Game.java) is the interface the
+[`Game.java`](../../packages/core/src/main/java/com/sexidium/core/game/Game.java) is the interface the
 `GameManager` and `GameEventRouter` talk to. Required methods are `id()`, `displayName()`,
 `minPlayers()`, `start(List<PlayerAdapter>)`, `stop(LocalizedText)`, and `state()`. Everything else is
 a `default` no-op so a mode overrides only what it needs:
@@ -162,7 +162,7 @@ a `default` no-op so a mode overrides only what it needs:
 
 ### `AbstractGame` (the base class)
 
-[`AbstractGame.java`](../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java) is what
+[`AbstractGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java) is what
 every concrete mode ultimately extends. It owns:
 
 - `Set<UUID> players` (a `LinkedHashSet`) — the game's own participant set, **independent of**
@@ -206,7 +206,7 @@ The args carry team/format parsing for minigames and the challenge-id list for e
 
 ### `GameRegistry`
 
-[`GameRegistry.java`](../packages/core/src/main/java/com/sexidium/core/game/GameRegistry.java) keeps two
+[`GameRegistry.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameRegistry.java) keeps two
 maps: `descriptorsByModeId` (canonical descriptors) and `modesByAlias` (every normalized id **and**
 alias → `RegisteredMode{descriptor, factory}`).
 
@@ -217,7 +217,7 @@ before lookup and then invokes the factory, returning `Optional<Game>`.
 
 ### `CoreGameRegistryInitializer`
 
-[`CoreGameRegistryInitializer.create()`](../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java)
+[`CoreGameRegistryInitializer.create()`](../../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java)
 builds a fresh `GameRegistry` and calls `register()` → `registerMinigames()` + `registerExperience()`.
 The category constants are `CATEGORY_MINIGAMES = "minigames"` and `CATEGORY_EXPERIENCE = "experience"`
 (**singular**, `CoreGameRegistryInitializer.java:14`). The adapters call
@@ -239,7 +239,7 @@ The single `experience` mode (`ExperienceGame.MODE_ID`, `registerExperience()` a
 `CoreGameRegistryInitializer.java:59`) is launched as `/sx start experience <challenge ids...>`; the
 **challenge ids arrive as `modeArgs`** and are composed inside `ExperienceGame` — they are *not*
 registered as standalone modes. The challenge catalog itself lives in
-[experiences.md](experiences.md).
+[experiences.md](../gameplay/experiences.md).
 
 > The descriptor `category` is enforced by the admin `/sx start <category> <mode>` command: a mode whose
 > descriptor category mismatches the requested category is rejected.
@@ -248,7 +248,7 @@ registered as standalone modes. The challenge catalog itself lives in
 
 ## 4. `GameManager` — lifecycle & state
 
-[`GameManager.java`](../packages/core/src/main/java/com/sexidium/core/game/GameManager.java) holds all
+[`GameManager.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameManager.java) holds all
 live state:
 
 - `matches` : `matchId → ActiveMatch`
@@ -357,7 +357,7 @@ specific one (§9).
 
 ## 7. `GameState` and transitions
 
-[`GameState.java`](../packages/core/src/main/java/com/sexidium/core/game/GameState.java) has four
+[`GameState.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameState.java) has four
 values: `IDLE`, `RUNNING`, `STANDBY` (paused), `ENDED`.
 
 ```mermaid
@@ -423,7 +423,7 @@ fugitive is disconnected.
 
 ### `ActiveMatch`
 
-[`ActiveMatch.java`](../packages/core/src/main/java/com/sexidium/core/game/ActiveMatch.java) is an
+[`ActiveMatch.java`](../../packages/core/src/main/java/com/sexidium/core/game/ActiveMatch.java) is an
 immutable per-match handle: `matchId` (random), `modeId`, `modeArgs` (immutable copy), `game`,
 `worldLease` (may be `null`), `createdAt`. `world()` / `worldName()` resolve through the lease (`null` if
 no lease). `buildSnapshot()` (`ActiveMatch.java:60`) fills the match-level fields then delegates per-player
@@ -439,11 +439,11 @@ supplied, so every mode always has a standardized lobby-NPC hologram with no per
 
 ### `BaseTimedGame`
 
-[`BaseTimedGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java)
+[`BaseTimedGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java)
 supplies the timed-elimination lifecycle. Its only practical subclass path is `MinigameMode` → the
 concrete minigames. **`ExperienceGame` extends `AbstractGame` directly** (not `BaseTimedGame`) and does
 *not* use the `configPrefix()` scheme — it reads config under `experiences.common.*` and
-`experiences.modes.*` (see [experiences.md](experiences.md)).
+`experiences.modes.*` (see [experiences.md](../gameplay/experiences.md)).
 
 ```mermaid
 flowchart TD
@@ -482,7 +482,7 @@ global `game.*` key, so a value lives in one place but a single mode can diverge
 
 ### `Countdown`
 
-[`Countdown.java`](../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) is a
+[`Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) is a
 self-contained boss-bar timer:
 
 - `start(viewers)` creates a boss bar and `runTimer(this::tick, 0, 20)` (1 tick per second).
@@ -499,7 +499,7 @@ Games use `AbstractGame.timerBar(...)` rather than instantiating `Countdown` dir
 
 ### The sealed hierarchy
 
-[`GameEvent.java`](../packages/core/src/main/java/com/sexidium/core/event/GameEvent.java) is a sealed
+[`GameEvent.java`](../../packages/core/src/main/java/com/sexidium/core/event/GameEvent.java) is a sealed
 interface:
 
 ```java
@@ -534,7 +534,7 @@ veto a vanilla action by calling `setCancelled(true)` inside `handle()`.
 
 ### Routing
 
-[`GameEventRouter`](../packages/core/src/main/java/com/sexidium/core/event/GameEventRouter.java) takes
+[`GameEventRouter`](../../packages/core/src/main/java/com/sexidium/core/event/GameEventRouter.java) takes
 `(ServerAdapter, GameManager, LobbyManager)`. Its `handle()` switch-dispatches:
 
 - **Join / Quit / Respawn / ChangedWorld** are special-cased into the matching `GameManager` hook **and**
@@ -638,13 +638,13 @@ verify both adapters implement it — see [platform-and-adapters.md](platform-an
 ## Keeping this current
 
 The **code is the source of truth**; this doc is a derived view. Authoritative files for this domain:
-[`game/`](../packages/core/src/main/java/com/sexidium/core/game) (especially `GameManager.java`,
+[`game/`](../../packages/core/src/main/java/com/sexidium/core/game) (especially `GameManager.java`,
 `AbstractGame.java`, `Game.java`, `GameRegistry.java`, `CoreGameRegistryInitializer.java`,
 `GameModeDescriptor.java`, `ActiveMatch.java`, `GameState.java`, `modes/BaseTimedGame.java`),
-[`event/`](../packages/core/src/main/java/com/sexidium/core/event) (`GameEvent.java`,
-`GameEventRouter.java`), and [`util/Countdown.java`](../packages/core/src/main/java/com/sexidium/core/util/Countdown.java).
+[`event/`](../../packages/core/src/main/java/com/sexidium/core/event) (`GameEvent.java`,
+`GameEventRouter.java`), and [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java).
 Update **this doc in the same change** that touches those files. Triggers: a new class/file in the game
 or event package, a new/removed registered mode in `CoreGameRegistryInitializer`, a new `Game` SPI method
 or signature/behavior change, a new `GameEvent` permit, or a config key added/removed under
 `games.*` / `minigames.*` / `reconnect.*`. Game *content* changes (individual minigames/challenges) belong
-in [minigames.md](minigames.md) / [experiences.md](experiences.md), not here.
+in [minigames.md](../gameplay/minigames.md) / [experiences.md](../gameplay/experiences.md), not here.

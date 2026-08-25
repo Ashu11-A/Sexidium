@@ -17,7 +17,7 @@ import java.util.Set;
  * Break-One-Break-All sweep, a Random-Chunks conversion and a TNT blast all route loot through the
  * shared {@link DropPipeline} here, so a multiplier reaches loot it never used to see, and all
  * placement/destruction is arbitrated by the registered {@link BlockChangeVeto}s. See
- * {@code docs/experience-composition.md}.
+ * {@code docs/gameplay/experiences.md}.
  */
 public final class BlockBreakService {
   private final DropPipeline drops;

@@ -3,7 +3,7 @@
 Most of Sexidium's challenges come from a YouTuber format ("Minecraft, But Every Block I Place Copies
 Everywhere", "Minecraft But Mobs Multiply"…). This file is the workflow for going from *a handful of
 video links* to *a shipped, tested challenge*. It sits in front of
-[Prompt.challenge.md](Prompt.challenge.md) — do the research here first, then implement there.
+[Prompt.challenge.md](add-a-challenge.md) — do the research here first, then implement there.
 
 ## Ground rules
 
@@ -85,7 +85,7 @@ A single-player mod may brute-force the world; a server may not. Every "affects 
 3. **Order, when the mechanic depends on it.** If the mode re-creates *player actions* rather than just
    block states, store a **commit log**, not a snapshot: a multi-block structure only works if its blocks
    arrive in the original sequence (`ChunkLedger` — see
-   [experiences.md](experiences.md#omni-chunks-commit-engine)). Apply commits with physics on
+   [experiences.md](../gameplay/experiences.md#omni-chunks-commit-engine)). Apply commits with physics on
    (`WorldAdapter.setBlockNatural`) so vanilla, not your code, decides what a completed structure does —
    that is how golems, fluids and redstone come out right without hardcoding a single pattern.
 4. **A catch-up story** for anything outside the bound. Omni Chunk keeps a **bounded, persisted history**
@@ -97,7 +97,7 @@ A single-player mod may brute-force the world; a server may not. Every "affects 
 
 ## 4. Implement
 
-Follow [Prompt.challenge.md](Prompt.challenge.md) exactly. Two extra rules that come from this format:
+Follow [Prompt.challenge.md](add-a-challenge.md) exactly. Two extra rules that come from this format:
 
 - **Put the rule in a pure class.** The geometry (`ChunkStamp`), the history and its persistence format
   (`ChunkLedger`) go in host-free classes unit-tested without a world; the `*Challenge` keeps only the
@@ -108,7 +108,7 @@ Follow [Prompt.challenge.md](Prompt.challenge.md) exactly. Two extra rules that 
 ## 5. Record the provenance
 
 In the challenge's class Javadoc, name the mode as players know it (e.g. "the mode YouTubers call
-OmniChunk") and state the rule. In [experiences.md](experiences.md), the catalog row says what it does and
+OmniChunk") and state the rule. In [experiences.md](../gameplay/experiences.md), the catalog row says what it does and
 what the bounds are. **Do not** paste video links, titles or transcript text into source files — the code
 should read as a description of the mechanic, not of a video.
 
@@ -119,7 +119,7 @@ should read as a description of the mechanic, not of a video.
 - [ ] Rule spec written in your own words, with variants noted as config keys
 - [ ] Spatial bound + per-tick budget + catch-up designed before coding
 - [ ] Pure rule class + unit test; challenge class holds only lifecycle
-- [ ] [Prompt.challenge.md](Prompt.challenge.md) checklist completed (catalog, icons, config, docs, tests)
+- [ ] [Prompt.challenge.md](add-a-challenge.md) checklist completed (catalog, icons, config, docs, tests)
 - [ ] No transcript text or video links in source or docs
 
 ---

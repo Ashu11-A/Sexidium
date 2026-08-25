@@ -3,10 +3,10 @@
 Sexidium's menu domain is a platform-agnostic chest-GUI framework in `com.sexidium.core.menu`, plus a
 native "Nexo-style" custom-art layer and a per-platform render seam. The core builds every screen as one
 abstract `MenuView`; adapters render that single model differently per target. There is no menu content in
-`config.yml` — menus are code-driven in [`MenuService`](../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java);
+`config.yml` — menus are code-driven in [`MenuService`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java);
 config only tunes resource-pack delivery. The custom art (glyph backgrounds + item-model icons + baked
 per-screen scenes) is **purely additive**: every menu is fully usable without it, on every client. See
-[graphical interfaces](reference-tech.md) for the governing cross-play constraints and
+[graphical interfaces](../reference/tech-decisions.md) for the governing cross-play constraints and
 [UI & localization](ui-and-localization.md) for HUD / boss bars / i18n.
 
 Chest buttons and the persistent **lobby hotbar** items share one inheritance-based model built on the
@@ -30,7 +30,7 @@ renders per target:
 > **NeoForge has no custom art today.** The adapter opens a plain marked vanilla container and renders no
 > glyphs, no `item_model`s, and no scene art — it has zero references to `MenuArt`, `SexidiumResourcePack`,
 > or `setItemModel`. The marked title is a hook for a hypothetical client overlay that does not exist in
-> this repo. Custom art on NeoForge is aspirational. ([`NeoForgeMenuAdapter`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java))
+> this repo. Custom art on NeoForge is aspirational. ([`NeoForgeMenuAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java))
 
 All menu logic lives in platform-agnostic core; the only seams are `PlayerAdapter` (who/where) and the
 `MenuAdapter` SPI (render this view).
@@ -41,14 +41,14 @@ All menu logic lives in platform-agnostic core; the only seams are `PlayerAdapte
 
 | Type | Role |
 |---|---|
-| [`MenuService`](../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java) | Builds + opens every screen as a `MenuView`; owns the hub `MenuCatalog`, per-player builder/confirm state |
-| [`MenuView`](../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java) | A chest screen: MiniMessage title, 1–6 rows, sparse `slot → MenuButton` map, optional art |
-| [`MenuButton`](../packages/core/src/main/java/com/sexidium/core/menu/MenuButton.java) | One slot: `icon, amount, name, lore, onClick, headOwner, model` |
-| [`MenuContext`](../packages/core/src/main/java/com/sexidium/core/menu/MenuContext.java) | A click: `PlayerAdapter` + `ClickType` (LEFT/RIGHT/SHIFT_LEFT/SHIFT_RIGHT/MIDDLE/OTHER) |
-| [`MenuCatalog`](../packages/core/src/main/java/com/sexidium/core/menu/MenuCatalog.java) | Ordered registry of hub tabs (`register` / `tabs` / `visibleFor` / `byId`) |
-| [`MenuTab`](../packages/core/src/main/java/com/sexidium/core/menu/MenuTab.java) | One self-describing `/sx` interface |
-| [`MenuForms`](../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java) | Flattens a sparse view into a Bedrock-form action list + body labels |
-| [`MenuSentinel`](../packages/core/src/main/java/com/sexidium/core/menu/MenuSentinel.java) | Marks a NeoForge title so a modded client could recognise it |
+| [`MenuService`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java) | Builds + opens every screen as a `MenuView`; owns the hub `MenuCatalog`, per-player builder/confirm state |
+| [`MenuView`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java) | A chest screen: MiniMessage title, 1–6 rows, sparse `slot → MenuButton` map, optional art |
+| [`MenuButton`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuButton.java) | One slot: `icon, amount, name, lore, onClick, headOwner, model` |
+| [`MenuContext`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuContext.java) | A click: `PlayerAdapter` + `ClickType` (LEFT/RIGHT/SHIFT_LEFT/SHIFT_RIGHT/MIDDLE/OTHER) |
+| [`MenuCatalog`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuCatalog.java) | Ordered registry of hub tabs (`register` / `tabs` / `visibleFor` / `byId`) |
+| [`MenuTab`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuTab.java) | One self-describing `/sx` interface |
+| [`MenuForms`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java) | Flattens a sparse view into a Bedrock-form action list + body labels |
+| [`MenuSentinel`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuSentinel.java) | Marks a NeoForge title so a modded client could recognise it |
 
 ### MenuView art opt-ins
 
@@ -58,7 +58,7 @@ A view requests art two ways, both ignored by no-pack / Bedrock viewers:
 - `screenArt(sceneId)` — renders the view as a fully baked scene; it also sets `backgroundArt =
   MenuArt.screenGlyphId(sceneId)`, so the title path picks up the screen glyph and every interactive button
   becomes an invisible hitbox (only the baked art shows, clicks intact).
-  ([`MenuView#screenArt`](../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java))
+  ([`MenuView#screenArt`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuView.java))
 
 ### MenuButton factories
 
@@ -82,7 +82,7 @@ no-animation renderers (Bedrock forms, NeoForge, tests).
 The main menu is not hand-laid-out. `MenuService.registerHubTabs()` registers each top-level interface as a
 `MenuTab`; `openMain` filters by permission via `catalog.visibleFor(player)` and renders the result into a
 centered grid via `layoutCentered`. Adding an interface to the hub is exactly one `MenuTab` registration —
-no layout-code edits. ([`MenuService#registerHubTabs` / `#openMain` / `#layoutCentered`](../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java))
+no layout-code edits. ([`MenuService#registerHubTabs` / `#openMain` / `#layoutCentered`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuService.java))
 
 `MenuTab` is a record (`id, icon, iconModel, title-fn, lore-fn, visible-predicate, open`) with factories
 `of` (constant), `dynamic` (per-viewer lore), `visibleWhen` (gated), `visibleTo`, and `toButton`. Tabs, in
@@ -122,10 +122,10 @@ sees the plain chest because the marker carries no glyph. The consuming overlay 
 
 ## MenuArt: the single source of truth
 
-[`MenuArt`](../packages/core/src/main/java/com/sexidium/core/menu/MenuArt.java) declares every icon-model
+[`MenuArt`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuArt.java) declares every icon-model
 and shift once, and reads the background glyphs + bitmap fonts from the yml registry
-([`menu/backgrounds.yml`](../packages/core/src/main/resources/menu/backgrounds.yml) via
-[`BackgroundCatalog`](../packages/core/src/main/java/com/sexidium/core/menu/BackgroundCatalog.java)).
+([`menu/backgrounds.yml`](../../packages/core/src/main/resources/menu/backgrounds.yml) via
+[`BackgroundCatalog`](../../packages/core/src/main/java/com/sexidium/core/menu/BackgroundCatalog.java)).
 `MenuService` reads `MenuArt` to **request** art; `SexidiumResourcePack` reads the same data to **produce**
 it — so adding art is one entry (a yml line for a background/font, a Java constant for an icon), not two.
 Fonts: `sexidium:menu` (bitmap background glyphs), `sexidium:space` (shift advances), and the medieval
@@ -208,29 +208,29 @@ backgrounds**. It is fully unit-tested and entirely undocumented in the older do
 
 ### Model
 
-- [`Scene`](../packages/core/src/main/java/com/sexidium/core/menu/scene/Scene.java) — `id` + canvas
+- [`Scene`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/Scene.java) — `id` + canvas
   `width`/`height` + an ordered `List<Element>` drawn back-to-front. Built via a fluent `Builder`.
-- [`Element`](../packages/core/src/main/java/com/sexidium/core/menu/scene/Element.java) — sealed,
+- [`Element`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/Element.java) — sealed,
   permitting `Fill` (solid/rounded rect, packed ARGB), `Sprite` (atlas id + `Fit` of
   `STRETCH`/`CONTAIN`/`COVER`/`NONE`), and `Text` (`fontId`, ARGB, H/V align). Colours are packed `int`s so
   the model carries no AWT dependency.
-- [`Box`](../packages/core/src/main/java/com/sexidium/core/menu/scene/Box.java) — the GUI-pixel rectangle
+- [`Box`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/Box.java) — the GUI-pixel rectangle
   primitive (`inset`, `translate`, `centeredChild`, `intersects`, …).
 
 ### Renderer and assets
 
-- [`SceneRenderer`](../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneRenderer.java) —
+- [`SceneRenderer`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneRenderer.java) —
   rasterises a `Scene` to a `BufferedImage` deterministically: forces `java.awt.headless=true` on class
   load, text antialiasing off (pixel-art look), nearest-neighbour upscale + bicubic downscale.
-- [`BitmapFont`](../packages/core/src/main/java/com/sexidium/core/menu/scene/BitmapFont.java) — one PNG per
+- [`BitmapFont`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/BitmapFont.java) — one PNG per
   char. **Display** fonts (`tintable == false`) draw the hand-authored `item/font/char_*` caps verbatim;
   **body** fonts (`tintable == true`) are alpha masks drawn multiplied by the requested colour (and can be
   built from an AWT logical font). Unknown chars advance by the space width and draw nothing.
-- [`ComponentAtlas`](../packages/core/src/main/java/com/sexidium/core/menu/scene/ComponentAtlas.java) — maps
+- [`ComponentAtlas`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/ComponentAtlas.java) — maps
   a sprite id to a PNG, blending in-memory `register` overrides with a lazy cached lookup under a base dir
   (`item/system/home → <base>/item/system/home.png`). A miss returns `null`; the renderer skips it, so a
   single absent asset never aborts a compose.
-- [`SceneAssets`](../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneAssets.java) — wires a
+- [`SceneAssets`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneAssets.java) — wires a
   renderer from `assets/menu-art` (icons) + the **medieval window frame** (`assets/ui/chest/chest_6.png`,
   registered as the `frame` sprite; falls back to the first PNG in `UI/frame`), with the display font from
   the medieval title caps (`item/font_title`) and a logical body font (it needs lowercase, which the
@@ -251,23 +251,23 @@ screens and the shipped live font are the same typography.
 
 ### Components and templates
 
-- [`Components`](../packages/core/src/main/java/com/sexidium/core/menu/scene/Components.java) — the reusable
+- [`Components`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/Components.java) — the reusable
   vocabulary built from primitives: `frame`, `plaque`, `gridTile`, `listRow`, `pill`, `count`,
   `presenceDot`, `signalBars`, `divider`, `headWell`, `backButton`, plus the palette. The frame draws an
   **opaque** base so a baked screen hides the vanilla chest grid entirely.
-- [`SceneTemplates`](../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneTemplates.java) —
+- [`SceneTemplates`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/SceneTemplates.java) —
   per-screen builders for the 3-screen slice (`mainHub`, `matchLobbies`, `socialLobby`). It owns
   `HUB_SLOTS = {10, 12, 14, 16, 29, 31, 33}`, `HUB_TILE_W`/`HUB_TILE_H`, and `hubHitGroups()` which maps
   each hub tile to its disjoint group of clickable slots (a big baked tile is hit by a click anywhere it
   covers, not just its centre slot).
-- [`ChestGrid`](../packages/core/src/main/java/com/sexidium/core/menu/scene/ChestGrid.java) — maps a slot
+- [`ChestGrid`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/ChestGrid.java) — maps a slot
   index to its pixel `Box`: `ORIGIN (8, 18)`, `SLOT 18`, `ICON 16`, and `slotsIntersecting(box)` for the
   hit groups. This is the bridge that makes a baked screen clickable: art at `iconBox(n)` and the hitbox in
   slot `n` coincide.
 
 ### Baker
 
-[`SceneBaker`](../packages/core/src/main/java/com/sexidium/core/menu/scene/bake/SceneBaker.java) bakes each
+[`SceneBaker`](../../packages/core/src/main/java/com/sexidium/core/menu/scene/bake/SceneBaker.java) bakes each
 slice scene to `ui/screens/<id>.png`: it supersamples at `PACK_SCALE = 6` for clean AA, downscales to the
 logical `176×222` six-row window size, and pastes that window into a 256×256 font cell at source `(0,0)`.
 CLI: `pack <menuArtDir> <frameDir>` (commit the output) or `preview …`. The gradle task
@@ -278,13 +278,13 @@ CLI: `pack <menuArtDir> <frameDir>` (commit the output) or `preview …`. The gr
 `PaperMenuAdapter.openChest` treats a view as a baked screen when `packLoaded && view.screenArt() != null &&
 the glyph exists`. It then forces a 6×9 inventory, routes hub clicks through `hubHitGroups` (today only
 `main-hub`), and **suppresses every non-head button item** so only the baked glyph shows. Only `main-hub` is
-opted in at runtime (in `openMain`, all-7-tabs case). ([`PaperMenuAdapter#openChest` / `#screenButtons`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java))
+opted in at runtime (in `openMain`, all-7-tabs case). ([`PaperMenuAdapter#openChest` / `#screenButtons`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java))
 
 ## Resource pack: generation, hosting, delivery
 
 ### Generation
 
-[`SexidiumResourcePack.build()`](../packages/core/src/main/java/com/sexidium/core/menu/pack/SexidiumResourcePack.java)
+[`SexidiumResourcePack.build()`](../../packages/core/src/main/java/com/sexidium/core/menu/pack/SexidiumResourcePack.java)
 emits a deterministic zip + its SHA-1 from `MenuArt`:
 
 - `pack.mcmeta` — `min_format`/`max_format` `84` (MC 26.1.2's `pack_version.resource_major`). Modern
@@ -311,7 +311,7 @@ any player who loaded the pack. Accepted because the pack is server-gated.
 
 ### Hosting
 
-[`ResourcePackServer.start()`](../packages/core/src/main/java/com/sexidium/core/net/ResourcePackServer.java)
+[`ResourcePackServer.start()`](../../packages/core/src/main/java/com/sexidium/core/net/ResourcePackServer.java)
 — **lives in `core.net`, not `core.menu.pack`** — builds the pack from `bundled/menupack-textures` (staged
 art) + `manifest.txt`, then either:
 
@@ -363,13 +363,13 @@ enable. Java clients then keep the plain chest menus.
 
 ### Paper (Bukkit-native, no InvUI)
 
-- [`PaperMenuAdapter`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java)
+- [`PaperMenuAdapter`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuAdapter.java)
   implements `MenuAdapter` and is itself a Bukkit `Listener`. A custom
-  [`SexidiumMenuHolder`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/SexidiumMenuHolder.java)
+  [`SexidiumMenuHolder`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/SexidiumMenuHolder.java)
   marks the inventory; clicks and drags are cancelled, and only the clicked button's `onClick` fires (on the
   main thread, where `InventoryClickEvent` already runs). `setPackGate` supplies the per-player pack-loaded
   predicate (default: nobody).
-- [`PaperMenuArt`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuArt.java)
+- [`PaperMenuArt`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperMenuArt.java)
   converts `<glyph:id>` / `<shift:n>` tags to font components via two MiniMessage instances: `ART` renders
   them, `PLAIN` strips them (so a no-pack viewer never sees a literal tag). For a pack-loaded viewer the
   title composes `<shift:frameShift><glyph:glyphId><shift:titleReturnShift>` + the title (the literal shift
@@ -377,17 +377,17 @@ enable. Java clients then keep the plain chest menus.
   the title colour into the bitmap (un-coloured glyphs render ~25% dark).
 - `toItemStack` calls `meta.setItemModel(NamespacedKey)` for pack-loaded players only, guarded so an older
   server falls back to the vanilla material.
-- [`PaperSkullSkins`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperSkullSkins.java)
+- [`PaperSkullSkins`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperSkullSkins.java)
   textures a `player_head` button: live profile if online → SkinsRestorer via reflection (soft-depend) →
   offline Mojang profile.
-- [`PaperResourcePackService`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperResourcePackService.java)
+- [`PaperResourcePackService`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperResourcePackService.java)
   offers the pack on join under a **stable UUID derived from the SHA-1** (so another plugin's / a proxy's
   pack never wrongly flips the gate), tracks `SUCCESSFULLY_LOADED`, exposes `loaded(UUID)` + `onLoaded`
   (used to refresh the lobby hotbar item-models without a relog), and **skips Bedrock players** entirely.
 
 ### Bedrock (Cumulus forms)
 
-[`PaperFormRenderer`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java)
+[`PaperFormRenderer`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperFormRenderer.java)
 builds a Cumulus `SimpleForm` from `MenuForms`: actions become form buttons, labels become body text. It
 flattens MiniMessage to plain text (Bedrock shows `§x` hex as garbage), attaches `mc-heads.net` face URLs to
 roster buttons, and re-schedules each tap onto the main thread as a plain `LEFT` click. Used only when the
@@ -397,14 +397,14 @@ runtime softdepend, never shaded.
 
 ### NeoForge
 
-- [`NeoForgeMenuAdapter`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java)
+- [`NeoForgeMenuAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java)
   opens a plain `GENERIC_9xN` `SimpleContainer` via reflection, with the title wrapped in
   `MenuSentinel.encode`. `close` calls `closeContainer()`.
-- [`NeoForgeMenuClassGenerator`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClassGenerator.java)
+- [`NeoForgeMenuClassGenerator`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClassGenerator.java)
   emits, once per JVM, an ASM subclass of `ChestMenu` that is read-only: `clicked` forwards to
   `handleClicked`, `quickMoveStack` returns `EMPTY`, `stillValid` returns `true`. (The deobfuscated
   `net.minecraft.*` classes aren't on the compile classpath in this build, hence ASM + reflection.)
-- [`NeoForgeMenuClickHandler`](../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClickHandler.java)
+- [`NeoForgeMenuClickHandler`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClickHandler.java)
   routes a click to `NeoForgeMenuAdapter.dispatchClick`, which looks up `view.button(slot)` and invokes its
   `onClick` with a `MenuContext` (vanilla click/drag mapped to `ClickType` via `mapClickType`).
 
@@ -435,7 +435,7 @@ against `MenuService` when in doubt. The reusable mechanics:
   a world is listed on that world's **Backups** screen, reached from slot 15 of its manage screen).
   Otherwise the row is unreachable — with no
   error, and no way for the player to tell it still exists. See
-  [experiences § Backups](experiences.md#backups-a-backup-is-an-experience).
+  [experiences § Backups](../gameplay/experiences.md#backups-a-backup-is-an-experience).
 - **An answer that comes from another node is reported, not assumed — onto a screen that is already
   gone.** Anything routed through `ExperienceCommandRouter` (delete, backup, restore, refresh,
   duplicate) **closes the menu on the click** (`serverAdapter.menus().close(clicker)`), sends a
@@ -450,7 +450,7 @@ against `MenuService` when in doubt. The reusable mechanics:
   do — the armed lore says in as many words that they can keep playing meanwhile. Localized chat,
   not an action bar: the answer routinely arrives seconds later, long after an action bar would have
   faded, and chat is the whole answer — the new row is on the Backups screen when they next open it.
-  See [experiences § Backups](experiences.md#backups-a-backup-is-an-experience).
+  See [experiences § Backups](../gameplay/experiences.md#backups-a-backup-is-an-experience).
 - **Click-only player pickers** (Add Friend, NPC skin, invite) — a reusable roster of online-player heads,
   replacing every "type a name" command.
 - **Single-choice sub-screens** — when options are mutually exclusive they get their own screen instead of
@@ -458,7 +458,7 @@ against `MenuService` when in doubt. The reusable mechanics:
   the experience builder carries one **World** tile showing the current map type; tapping it opens a
   screen where exactly one of Normal / Nether / The End / the generated SkyBlock maps can be active
   (✔-marked), with un-pickable options rendered as greyed-out labels that say why. This is what makes two
-  world-generating twists impossible to select at once — see [experiences](experiences.md#world-type-map-selection).
+  world-generating twists impossible to select at once — see [experiences](../gameplay/experiences.md#world-type-map-selection).
 - **Sticky toggles read their state in the label** — a setting tile shows its current value in the item name
   (`Keep Inventory: ON` / `OFF`, `World: Nether`) rather than relying on a hover tooltip, because Bedrock's
   flat tap-grid has none. The experience builder carries the **World** and **Keep Inventory** tiles; the

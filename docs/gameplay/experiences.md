@@ -4,7 +4,7 @@ A player-built **Experience** is a single, persistent, survival-only world that 
 
 Everything here lives in the platform-agnostic **core** (`packages/core`) under `com.sexidium.core.game.experience` (host + manager + service + store), `…experience.challenges` (the twists), `…experience.compose` (the interop layer) and `com.sexidium.core.game.team` (the minigame team system). It talks only to the core SPI (`PlayerAdapter` / `WorldAdapter` / `MobHandle` / `InventoryAdapter` / `UiAdapter`), never to Bukkit or NeoForge directly.
 
-Related docs (linked, not duplicated): the [game framework](game-framework.md) (`Game`/`GameManager`/event router), the [menu system](menus.md) for the builder/manage/browse chest GUIs, [lobby, worlds & social](lobby-worlds-and-social.md) for lobby nav items, host match-lobbies (`/lobby`), lobby NPCs (`/sx admin npc`), world leasing and the persistent-world layout.
+Related docs (linked, not duplicated): the [game framework](../architecture/game-framework.md) (`Game`/`GameManager`/event router), the [menu system](../interface/menus.md) for the builder/manage/browse chest GUIs, [lobby, worlds & social](lobby-worlds-and-social.md) for lobby nav items, host match-lobbies (`/lobby`), lobby NPCs (`/sx admin npc`), world leasing and the persistent-world layout.
 
 ---
 
@@ -496,13 +496,13 @@ Exactly one of the two per player, and never both: the fallback is gated on the 
 > the fired-popup ledger (`SurfaceClaims.showingPopup`), and the number's colour is declared as
 > `HudColor.RED` on the row so the overlay agrees with the `<red><bold>` the title reads from the lang
 > file. See **A fired popup is invisible…** and **Row colour** in
-> [`ui-and-localization.md`](ui-and-localization.md).
+> [`ui-and-localization.md`](../interface/ui-and-localization.md).
 
 Each new number **arrives at 5× and eases back to 3× over 420 ms**. That is not decoration: a countdown
 whose digits merely replace each other at a fixed size gives a glancing player nothing to distinguish
 "still counting" from "stuck", and someone who has just been killed is doing a great deal of glancing.
 The mechanism is `HudElement.PulseRow`, and it is triggered by the value *changing* rather than by a
-call — see **Animated rows** in [`ui-and-localization.md`](ui-and-localization.md) for why that
+call — see **Animated rows** in [`ui-and-localization.md`](../interface/ui-and-localization.md) for why that
 distinction is the whole design, and for how it is compiled given BetterHud has no scale equation.
 
 **There is no boss bar any more.** There used to be one (`experience.reset.countdown`, "NEW WORLD in
@@ -573,7 +573,7 @@ A player who leaves stops seeing the column but keeps their number in it for eve
 render those three numbers in BetterHud's **top-left corner** overlay and suppress the scoreboard sidebar.
 
 > **The corner works at the pinned 26.1.2** — that pin exists largely for this readout (F62 in
-> [known issues](known-issues.md)), and `hud.betterhud.enabled` ships `true` for it. On **26.2**
+> [known issues](../reference/known-issues.md)), and `hud.betterhud.enabled` ships `true` for it. On **26.2**
 > BetterHud's shader overlay does not match the client, so the readout renders on the sidebar for
 > everybody: the provisioner writes `hud.betterhud.enabled: false` on a pin it does not cover, and on any
 > path it does not reach, `BetterHudLink`'s capability probe reaches the same outcome by refusing to
@@ -614,7 +614,7 @@ make on every transition is gone too.
 > files removed, nothing outside it touched), empties BetterHud's `default-hud` list so its bundled demo
 > hud stops riding along, and reloads it only if something changed. It then keeps each player wearing
 > *only* the surfaces a consumer asked for — nothing in the lobby, nothing in a minigame. All opt-out
-> under `hud.betterhud.*` in `config.yml`; see [ui-and-localization.md](ui-and-localization.md) §4.4.
+> under `hud.betterhud.*` in `config.yml`; see [ui-and-localization.md](../interface/ui-and-localization.md) §4.4.
 
 The overlay is driven by the challenge's own timer (`experiences.common.hud-refresh-ticks`) rather than
 by the HUD render pass, because when the panel *is* suppressed that pass paints nothing.
@@ -727,7 +727,7 @@ toggled in the builder, on the manage screen, or with `/sx experience hardcore <
   `Challenge#hardcoreDeathOutcome()`, and can force hardcore on entirely with `Challenge#requiresHardcore()`.
 - **The world is lost, not deleted.** It stays on the owner's list so they can walk back through what
   killed them, but any re-entry is **SPECTATOR** — declared through the
-  [entry-policy API](game-framework.md#entry-policy-how-a-mode-controls-arrival) rather than set by hand,
+  [entry-policy API](../architecture/game-framework.md#entry-policy-how-a-mode-controls-arrival) rather than set by hand,
   and *kept* that way by a once-a-second watchdog rather than only checked at the door. Entry-time
   enforcement alone was not enough: something always wrote a game mode afterwards (a respawn, a restored
   snapshot, a plugin, an operator), which is exactly how a player could still be in a dead world in
@@ -1036,7 +1036,7 @@ State therefore shares the world's lifecycle (travels with a copy, deleted with 
   `MenuService.refreshExperienceScreens()` redraws the experience screens players here still have
   open. `reconcileLive` also runs on every entry, so a visitor joining a world that has been up for
   hours plays the set the owner has now, not the one it started with. See
-  [network-transfer.md §5c](network-transfer.md).
+  [network-transfer.md §5c](../operations/network-transfer.md).
 - **Restart resume** reuses the reconnect machinery (`isReconnectable() == true`): a reconnectable match is persisted on shutdown and its world preserved; `ExperienceGame.restore` re-wires challenges via `initChallenges` so events never hit a null host, and the player is restored to their exact saved position.
 
 ### Backups (a backup IS an experience)
@@ -1202,7 +1202,7 @@ restore engine, and nothing ever has to put bytes back underneath a running worl
 #### The verb set
 
 Six verbs ship. Each one is a tile on the copy's own screen and a
-[`/sx admin backup`](commands.md#sx-admin-backup) verb, and each destructive one arms with a **second
+[`/sx admin backup`](../interface/commands.md#sx-admin-backup) verb, and each destructive one arms with a **second
 tap** through `MenuSupport.confirmButton` (`MenuSupport.java:406`). **Two taps, always — there is no
 shortcut past it.** A shift-click used to confirm outright, and in a chest that is the reflex gesture
 for "move this item", so it fired Restore, Refresh and Delete off a tap the owner never meant as one;
@@ -1303,13 +1303,13 @@ after it, and "this tile deletes the world" is already what the tile is *called*
 ```
 
 Backups have an operator surface of their own — see
-[`/sx admin backup`](commands.md#sx-admin-backup) for `list | info | create | restore | refresh |
+[`/sx admin backup`](../interface/commands.md#sx-admin-backup) for `list | info | create | restore | refresh |
 duplicate | delete | pending`. It is console-safe (it never requires a player) and resolves the row's
 true owner as the requester, which is what makes the whole feature testable on the live network
 without a client standing in the lobby. There is still no *player* `/sx experience backup` command:
 the tiles are the player's entry point.
 
-GUIs (built on the [menu system](menus.md)): **Experiences** (builder / challenge picker + the **World** and **Keep Inventory** tiles), **Choose World** (the single-choice map-type screen), **My Experiences** (manage; slot 15 is the **Backups** doorway, **Delete** confirms with a second tap), **Backups** (every copy of one world + "Take a backup now"), **Backup** (one copy: Enter / Restore / Refresh / Duplicate / Rename / Delete), **Browse Worlds** (public).
+GUIs (built on the [menu system](../interface/menus.md)): **Experiences** (builder / challenge picker + the **World** and **Keep Inventory** tiles), **Choose World** (the single-choice map-type screen), **My Experiences** (manage; slot 15 is the **Backups** doorway, **Delete** confirms with a second tap), **Backups** (every copy of one world + "Take a backup now"), **Backup** (one copy: Enter / Restore / Refresh / Duplicate / Rename / Delete), **Browse Worlds** (public).
 
 ---
 

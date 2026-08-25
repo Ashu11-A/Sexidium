@@ -9,14 +9,14 @@ new items are one small class.
 
 For the chest-GUI framework itself (render seams, cross-play rule, art layer, Bedrock forms) see
 [Menus](menus.md). For lobby/world context (protection, HUD, world kinds) see
-[Lobby, Worlds & Social](lobby-worlds-and-social.md).
+[Lobby, Worlds & Social](../gameplay/lobby-worlds-and-social.md).
 
 ## The shared render spec: `UiItem`
 
 Every UI item — a chest `MenuButton` and a hotbar `HotbarItem` — renders through one platform-agnostic
 visual value object:
 
-[`UiItem`](../packages/core/src/main/java/com/sexidium/core/menu/UiItem.java) — `icon` (`ItemKey`),
+[`UiItem`](../../packages/core/src/main/java/com/sexidium/core/menu/UiItem.java) — `icon` (`ItemKey`),
 `amount` (also used as a badge count), `name` (MiniMessage), `lore` (MiniMessage lines), `headOwner`
 (optional `player_head` skin), `model` (optional pack-gated `item_model`). It carries only what an item
 *looks like*; behaviour lives on the specialization.
@@ -30,7 +30,7 @@ visual value object:
 ### One materializer
 
 Both families materialize through a single Paper factory:
-[`PaperUiItemFactory`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperUiItemFactory.java)
+[`PaperUiItemFactory`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/menu/PaperUiItemFactory.java)
 (`build` / `apply`). It does MiniMessage name+lore with the `PaperMenuArt` glyph translation, player-head
 skinning, and the pack-gated custom `item_model` — in exactly one place. `PaperMenuAdapter.toItemStack`
 calls `PaperUiItemFactory.build(button.visual(), packLoaded)`; the hotbar renderer calls
@@ -39,17 +39,17 @@ items render (a new component, a texture rule) is now a one-file change.
 
 ## The dynamic lobby hotbar
 
-Package [`com.sexidium.core.world.hotbar`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/).
+Package [`com.sexidium.core.world.hotbar`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/).
 All platform-agnostic; the platform only renders resolved slots and forwards clicks.
 
 | Type | Role |
 |---|---|
-| [`HotbarItem`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarItem.java) | Abstract base: `id()`, `slot()`, `visibleFor(ctx)`, `build(ctx) → UiItem`, `onClick(ctx)` |
-| [`HotbarScope`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarScope.java) | `LOBBY` / `MINIGAME` / `EXPERIENCE` — selects a profile (named to avoid clashing with the world-lease `WorldKind`) |
-| [`HotbarProfile`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarProfile.java) | The ordered `HotbarItem`s for one scope |
-| [`HotbarController`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarController.java) | Single authority: owns the profiles; `resolve(player, scope) → List<HotbarSlot>` and `handleClick(player, scope, id)` |
-| [`HotbarContext`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarContext.java) | Per-render/-click: the player + scope + accessors onto `HotbarServices` (server, games, lobbies, friends, menus) |
-| [`HotbarSlot`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarSlot.java) | A resolved item ready to render: `(slot, id, UiItem)` — the platform never sees the `HotbarItem` |
+| [`HotbarItem`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarItem.java) | Abstract base: `id()`, `slot()`, `visibleFor(ctx)`, `build(ctx) → UiItem`, `onClick(ctx)` |
+| [`HotbarScope`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarScope.java) | `LOBBY` / `MINIGAME` / `EXPERIENCE` — selects a profile (named to avoid clashing with the world-lease `WorldKind`) |
+| [`HotbarProfile`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarProfile.java) | The ordered `HotbarItem`s for one scope |
+| [`HotbarController`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarController.java) | Single authority: owns the profiles; `resolve(player, scope) → List<HotbarSlot>` and `handleClick(player, scope, id)` |
+| [`HotbarContext`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarContext.java) | Per-render/-click: the player + scope + accessors onto `HotbarServices` (server, games, lobbies, friends, menus) |
+| [`HotbarSlot`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/HotbarSlot.java) | A resolved item ready to render: `(slot, id, UiItem)` — the platform never sees the `HotbarItem` |
 
 ### The lobby items — context-sensitive
 
@@ -57,7 +57,7 @@ All lobby items live in the single `LOBBY` profile; each decides its own visibil
 `HotbarContext`, so the same profile renders the **default** set for a solo player and swaps to the
 **lobby-management** set once the player configures/joins a match lobby. The switch key is
 `HotbarContext.managingLobby()` (in a lobby that is `CONFIGURED` or `QUEUED`); `leadsLobby()` gates
-owner-only tools ([`items/`](../packages/core/src/main/java/com/sexidium/core/world/hotbar/items/)).
+owner-only tools ([`items/`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/items/)).
 
 Default set (shown while **not** managing a lobby):
 
@@ -94,7 +94,7 @@ while the attacker holds the `lobby-invite` tool.
 
 ### Render + click routing (Paper)
 
-[`PaperLobbyGuard`](../packages/module-paper/src/main/java/com/sexidium/paper/adapter/world/PaperLobbyGuard.java)
+[`PaperLobbyGuard`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/world/PaperLobbyGuard.java)
 is the Paper seam — an event forwarder, not an item definition:
 
 - **Render** (`renderLobbyHotbar`): clears the inventory, then places each `HotbarSlot` from
@@ -112,7 +112,7 @@ The controller is the **single authority** and only the `LOBBY` profile has item
 points, this is what makes leakage impossible:
 
 - **Into a match:** `PlayerSessionCoordinator.admit` calls `resetStatuses()` (which clears the inventory
-  *and* the XP bar — see [known-issues F61](known-issues.md)) before the entry teleport. Lobby items are
+  *and* the XP bar — see [known-issues F61](../reference/known-issues.md)) before the entry teleport. Lobby items are
   never produced for a non-lobby scope, so none can enter.
 - **Back to the lobby:** `PaperLobbyGuard.onChangedWorld` strips tagged items when leaving a lobby world,
   and `renderLobbyHotbar` clears the inventory before re-placing — so a match item can't return and a
@@ -152,4 +152,4 @@ The code is the source of truth; this doc is a derived view. Authoritative sourc
 `PaperUiItemFactory`, and `PaperLobbyGuard` (render + click routing). **Update this doc in the same
 change that touches them.** Triggers: a new `HotbarItem` or scope; a change to the shared `UiItem` shape
 or the one materializer; a change to the lobby hotbar slots or click routing; or a change to the
-cross-world hygiene choke points. Related: [Menus](menus.md), [Lobby, Worlds & Social](lobby-worlds-and-social.md).
+cross-world hygiene choke points. Related: [Menus](menus.md), [Lobby, Worlds & Social](../gameplay/lobby-worlds-and-social.md).

@@ -1,7 +1,7 @@
 # Base prompt: adding or modifying a chest-GUI screen
 
 You are working on Sexidium's **menu system** — the declarative, cross-platform chest GUIs. Reference:
-[menus.md](menus.md) and [ui-interaction-system.md](ui-interaction-system.md). The golden rule: one
+[menus.md](../interface/menus.md) and [ui-interaction-system.md](../interface/ui-interaction-system.md). The golden rule: one
 abstract `MenuView` is built in core and rendered per platform (Paper chest, Bedrock Cumulus form,
 NeoForge plain container) — **a technique is only acceptable if it has a defined answer on all three.**
 
@@ -61,7 +61,7 @@ menu-art assets, and call `.withModel(...)`. `MenuArtCoverageTest` (registry/cat
 - [ ] Bedrock-safe: state in names, tap-again confirms, no shift/hover dependence
 - [ ] Per-player state cleared at every entry point
 - [ ] Icon tables + tests updated if art was added
-- [ ] [menus.md](menus.md) updated in the same change
+- [ ] [menus.md](../interface/menus.md) updated in the same change
 
 ---
 *Keeping this current: tracks `MenuService`/`MenuSupport`/`MenuView`/`MenuButton`, the screen classes,

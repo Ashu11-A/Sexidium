@@ -3,14 +3,14 @@
 The five round-based, competitive game modes registered under the `minigames` category:
 **Race for Item**, **Gather and Duel**, **TNT War**, **Combat Item Mode**, and **Fugitive**. They
 live in
-[`packages/core/src/main/java/com/sexidium/core/game/modes/minigames/`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames)
+[`packages/core/src/main/java/com/sexidium/core/game/modes/minigames/`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames)
 and all extend a thin shared base —
-[`MinigameMode`](../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) →
-[`BaseTimedGame`](../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java) →
-[`AbstractGame`](../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java). They touch
+[`MinigameMode`](../../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) →
+[`BaseTimedGame`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java) →
+[`AbstractGame`](../../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java). They touch
 only the platform SPI and immutable model records, so identical logic runs on Paper and NeoForge. For
-the engine that launches/ticks/cleans up matches see [game framework](game-framework.md); for the SPI
-see [platform abstraction](platform-and-adapters.md). The composable challenge modes are documented in
+the engine that launches/ticks/cleans up matches see [game framework](../architecture/game-framework.md); for the SPI
+see [platform abstraction](../architecture/platform-and-adapters.md). The composable challenge modes are documented in
 [experiences](experiences.md).
 
 ---
@@ -18,7 +18,7 @@ see [platform abstraction](platform-and-adapters.md). The composable challenge m
 ## Mode catalog
 
 Registration (id, category, display name, minPlayers, aliases) lives in
-[`CoreGameRegistryInitializer#registerMinigames`](../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java#L33-L53).
+[`CoreGameRegistryInitializer#registerMinigames`](../../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java#L33-L53).
 Launch with the category-first grammar `/sx start minigames <mode> [players/args…]`.
 
 | Mode | id (display name) | aliases | minPlayers | Objective | Win condition | Reconnectable? |
@@ -30,7 +30,7 @@ Launch with the category-first grammar `/sx start minigames <mode> [players/args
 | Fugitive | `fugitive` (*Fugitive*) | `manhunt`, `thefugitive`, `fled` | 3 | One fugitive (head start + escape kit) vs. many hunters; hunters chase with a fugitive-tracking compass | Fugitive survives the `hunt-seconds` timer (30 min); hunters win by killing the fugitive after release | yes (own role-aware persistence) |
 
 **Reconnect** is gated by the framework default
-[`BaseTimedGame#isReconnectable`](../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java#L57-L60),
+[`BaseTimedGame#isReconnectable`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java#L57-L60),
 which returns `reconnect.enabled` (default `true`). TntWar and Race inherit that default; Fugitive
 overrides it (`FugitiveGame.java:164-166`) so it can additionally pause the match when the fugitive
 leaves. Combat and Gather are short-lived FFA matches with no mode-data persistence — a leaver is
@@ -41,7 +41,7 @@ simply removed.
 ## Shared base (`MinigameMode` → `BaseTimedGame`)
 
 `MinigameMode` is intentionally tiny
-([`MinigameMode.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java)):
+([`MinigameMode.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java)):
 
 - **Config namespace.** `configPrefix()` → `"minigames." + id()` (lines 40-42), so every
   `configPath("…")` resolves under `minigames.<id>.*` in `config.yml`.
@@ -194,7 +194,7 @@ position commands.
 
 ## Combat (`combat`)
 
-[`CombatGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/CombatGame.java)
+[`CombatGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/CombatGame.java)
 · minPlayers **2** · last-man-standing PvP.
 
 - **Flow.** `super.start` → if `teamPlay()` `formTeams()` + `announceTeams()` → `teleportToArena()`
@@ -221,7 +221,7 @@ wall-height(3)}`, `players-per-team` (unset = FFA).
 
 ## Fugitive (`fugitive`)
 
-[`FugitiveGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/FugitiveGame.java)
+[`FugitiveGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/FugitiveGame.java)
 · minPlayers **3** · manhunt. One fugitive flees with a head start while the hunters are frozen as
 spectators in a server-side cinematic, then released to chase with a tracking compass. Owns its own
 respawns and pauses the match on a key-player leave.
@@ -298,7 +298,7 @@ top-level `kits:` block (`config.yml:877-895`).
 
 ## Gather (`gather`)
 
-[`GatherGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/GatherGame.java)
+[`GatherGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/GatherGame.java)
 · minPlayers **2** · two phases: **GATHER** then **DUEL**.
 
 - **Flow.** `super.start` → if `teamPlay()` `formTeams()` + `announceTeams()` → give starter-kit →
@@ -335,9 +335,9 @@ wall-height(3)}}}`, `players-per-team` (unset = FFA).
 
 ## Race (`race`)
 
-[`RaceGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/RaceGame.java)
+[`RaceGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/RaceGame.java)
 · minPlayers **1** · scavenger race with item + structure objectives and overtime votes. Round
-generation: [`race/RaceCatalog.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/race/RaceCatalog.java)
+generation: [`race/RaceCatalog.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/race/RaceCatalog.java)
 (tier pools + mix rule) and `race/RaceObjective.java` (item OR structure goal).
 
 > **Race is not an elimination mode.** `handleDamage` is an empty override (lines 145-147), so a death
@@ -390,10 +390,10 @@ marker-block(sea_lantern), marker-height(12), medium([]), difficult([])}`,
 
 ## TntWar (`tntwar`)
 
-[`TntWarGame.java`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/TntWarGame.java)
+[`TntWarGame.java`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/TntWarGame.java)
 · minPlayers **2** · Red vs Blue base-destruction war on a cloned (or procedurally generated) map.
 Supporting types in
-[`tntwar/`](../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/tntwar): `TntWarConfig`,
+[`tntwar/`](../../packages/core/src/main/java/com/sexidium/core/game/modes/minigames/tntwar): `TntWarConfig`,
 `TntWarMap` + `TntWarMapStore`, `BaseRegion`, `BaseTracker`.
 
 - **Teams.** TntWar uses its **own** hard-coded RED/BLUE string teams (`teamOf` map), **not** the
@@ -486,13 +486,13 @@ Verified against source; documented for awareness.
 ## Keeping this current
 
 Authoritative sources (code is the source of truth; this doc is a derived view):
-[`CoreGameRegistryInitializer`](../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java)
+[`CoreGameRegistryInitializer`](../../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java)
 (ids/aliases/minPlayers/display names),
-[`MinigameMode`](../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) +
-[`BaseTimedGame`](../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java)
+[`MinigameMode`](../../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) +
+[`BaseTimedGame`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java)
 (shared base + team system), the five `…/modes/minigames/*Game.java` files plus their `race/`,
 `tntwar/`, and `team/` support packages, and the `minigames.*` / `game.*` blocks in
-[`config.yml`](../packages/core/src/main/resources/config.yml). Update **this doc in the same change**
+[`config.yml`](../../packages/core/src/main/resources/config.yml). Update **this doc in the same change**
 that touches those files. Triggers: a new minigame class or support type added to the domain; any
 change to a mode's id/alias/minPlayers/display name, phase flow, win detection, team integration, or
 reconnect behaviour; or a `minigames.<id>.*` config key added/removed/renamed.

@@ -97,7 +97,7 @@ public final class ExperienceGame extends AbstractGame implements ChallengeConte
 
   // Composition layer: the shared pipelines challenges contribute to, the typed capability registry
   // siblings publish into, the shared stat counters, the unified HUD and the per-tick driver. See
-  // docs/experience-composition.md.
+  // docs/gameplay/experiences.md.
   private final DropPipeline dropPipeline = new DropPipeline(this);
   private final BlockBreakService blockBreakService = new BlockBreakService(dropPipeline);
   private final DamagePipeline damagePipeline = new DamagePipeline();

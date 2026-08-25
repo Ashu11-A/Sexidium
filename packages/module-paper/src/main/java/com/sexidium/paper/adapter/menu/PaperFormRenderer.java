@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 /**
  * Renders a {@link MenuView} as a <b>native Bedrock Cumulus form</b> for a Geyser/Floodgate player —
  * the touch-friendly UI for mobile/console clients, who cannot hover items, distinguish click types,
- * or open chests in void/lobby space (see {@code docs/graphical-interfaces-report.md}).
+ * or open chests in void/lobby space (see {@code docs/reference/tech-decisions.md}).
  *
  * <p>This class statically references the Cumulus form API, which is an optional runtime softdepend
  * (never shaded; provided at runtime by Floodgate or Geyser). {@link PaperMenuAdapter} therefore only

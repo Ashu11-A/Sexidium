@@ -70,7 +70,7 @@ SX_HTTP_RECORD="${SX_HTTP_RECORD:-}"
 # --- logging ------------------------------------------------------------------
 # The tag is a variable so docker/provision.sh can say [provision] while
 # init-paper.sh keeps the exact `[init-paper]` prefix its callers grep for
-# (scripts/docker-paper-entry.sh, docker-compose.yml, docs/known-issues.md).
+# (scripts/docker-paper-entry.sh, docker-compose.yml, docs/reference/known-issues.md).
 SX_LOG_TAG="${SX_LOG_TAG:-init-paper}"
 
 log() {

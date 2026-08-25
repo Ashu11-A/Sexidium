@@ -18,7 +18,7 @@ import java.util.List;
  * {@link ItemStack}. Both the chest {@link PaperMenuAdapter} and the lobby hotbar
  * ({@link com.sexidium.paper.adapter.world.PaperLobbyGuard}) render through this, so item rendering —
  * MiniMessage name/lore (with the {@link PaperMenuArt} glyph translation), player-head skinning, and the
- * pack-gated custom {@code item_model} — lives in exactly one place. See {@code docs/ui-interaction-system.md}.
+ * pack-gated custom {@code item_model} — lives in exactly one place. See {@code docs/interface/ui-interaction-system.md}.
  */
 public final class PaperUiItemFactory {
   private PaperUiItemFactory() {

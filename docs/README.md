@@ -29,7 +29,7 @@ the core gathers a roster, leases a disposable temporary world, teleports partic
 runs a `Game` that reacts to translated `GameEvent`s. The **`minigames`** category ships 5
 rounds (Race, Gather & Duel, TNT War, Combat, Fugitive/Manhunt). Separately, any player builds
 their own **Experience** with `/sx start experience <challenge…>` — a persistent survival world
-composing any of the 17 chaotic **challenges** (Double Drops, Shared Life, XP Health, …) that
+composing any of the 27 chaotic **challenges** (Double Drops, Shared Life, XP Health, …) that
 interoperate through shared drop/damage/health pipelines. Social and progression features —
 **friends** (SQLite), in-memory **party**, **queue**, and **invites** — are unified under a
 single `LobbyManager`/`/lobby`. A **rank/points** system awards per participation, kill, and win.
@@ -50,55 +50,89 @@ and gives ranks a Discord front end (`/rank`, `/leaderboard`, `/mc`, `/auth`, `/
 
 | Path | What lives here |
 |------|-----------------|
-| [`packages/core`](../packages/core) | Platform-agnostic engine: game framework (`game/`), 5 minigames + 17 composable challenges (`game/modes/minigames/`, `game/experience/`), experiences/teams/persistence (`game/experience/`, `game/team/`, `game/persist/`), event model + router (`event/`), command service (`command/`), unified lobby/social (`lobby/`), worlds (`world/`), menus + scene art (`menu/`), UI/i18n/decor (`i18n/`, `decor/`), ranks/auth/data (`rank/`, `auth/`, `data/`), networking + bot manager (`net/`, `bot/`), platform SPI (`platform/`), bundled resources (`config.yml`, DB migrations). |
+| [`packages/core`](../packages/core) | Platform-agnostic engine: game framework (`game/`), 5 minigames + 27 composable challenges (`game/modes/minigames/`, `game/experience/`), experiences/teams/persistence (`game/experience/`, `game/team/`, `game/persist/`), event model + router (`event/`), command service (`command/`), unified lobby/social (`lobby/`), worlds (`world/`), menus + scene art (`menu/`), UI/i18n/decor (`i18n/`, `decor/`), ranks/auth/data (`rank/`, `auth/`, `data/`), networking + bot manager (`net/`, `bot/`), platform SPI (`platform/`), bundled resources (`config.yml`, DB migrations). |
 | [`packages/module-paper`](../packages/module-paper) | Paper adapter: `PaperSexidiumPlugin` bootstrap, `PaperEventBridge`, Adventure/Bukkit player/world/scheduler/UI/inventory/menu adapters, `PaperWorldControl` (unified world layer) + Multiverse lobby, the BetterHud HUD driver, native scoreboard panels, kits, `plugin.yml`. |
-| [`packages/module-neoforge`](../packages/module-neoforge) | NeoForge adapter (MC 1.21.x): reflection-only port via `NeoForgeReflector`; `NeoForgeEventBridge` synthesizes move/inventory/sneak events from `PlayerTickEvent`; cooperative tick scheduler; hand-rolled vanilla world creation; ASM-generated chest-menu classes; global scoreboard/boss-bar UI. |
+| `packages/module-neoforge` *(not in the tree)* | NeoForge adapter (MC 1.21.x): reflection-only port via `NeoForgeReflector`; `NeoForgeEventBridge` synthesizes move/inventory/sneak events from `PlayerTickEvent`; cooperative tick scheduler; hand-rolled vanilla world creation; ASM-generated chest-menu classes; global scoreboard/boss-bar UI. |
 | [`bot/`](../bot) | TypeScript Discord bot (`bun` + discord.js + `@constatic/base`). Slash commands under `src/discord/`, auth/api helpers, `src/index.ts` entry. Launched and supervised by the Java `BotManager`; **not** a Gradle subproject (bundled as a resource into the adapter jars). |
 
 The Gradle build (`settings.gradle.kts`) includes `:packages:core`, `:packages:module-paper`, and
 `:packages:module-velocity` (the proxy plugin used by the networked deployment — see
-[deployment.md](deployment.md)). **`:packages:module-neoforge` is not in the build**: the NeoForge
+[operations/deployment.md](operations/deployment.md)). **`:packages:module-neoforge` is not in the build**: the NeoForge
 adapter described above is documented history, not something the build currently produces.
 
 ---
 
 ## 3. Documentation index
 
+Six folders, one per family of domains. Each carries its own `README.md` with the reading order and
+the "what is *not* here" boundary; the tables below are the flat view.
+
+### [`architecture/`](architecture/) — how the plugin is put together
+
 | Document | Covers |
 |----------|--------|
-| [architecture.md](architecture.md) | System map: core ↔ adapter split, the `SexidiumCore` wiring graph, startup/shutdown lifecycle, and a subsystem inventory pointing at the pages below. |
-| [platform-and-adapters.md](platform-and-adapters.md) | The platform SPI (`ServerAdapter` & friends, value-model records/enums, default-method capability degradation, noop/headless impls) **and** both adapter implementations (Paper, NeoForge) with a parity-gaps table. |
-| [game-framework.md](game-framework.md) | The match engine only: `GameManager`, `ActiveMatch`, `AbstractGame`/`BaseTimedGame`, `GameState`, registry/descriptors/factories, countdowns, event routing, and the start → run → end → teardown lifecycle. |
-| [minigames.md](minigames.md) | The 5 competitive minigames (Race, Gather, TNT War, Combat, Fugitive): phases, teams/roles, win detection, min players, aliases, config. |
-| [experiences.md](experiences.md) | Player-built persistent Experiences: the 17 challenges, how they **compose** via shared drop/damage/health pipelines + `ChallengeContext`, the auto team system, and persistence. |
-| [lobby-worlds-and-social.md](lobby-worlds-and-social.md) | The unified `LobbyManager` state machine (party + queue + friends + invites), disposable temp-world leasing + warm pool + reconnect/cleanup, world naming/generation, and lobby NPCs. |
-| [menus.md](menus.md) | The declarative menu framework (`MenuCatalog`/`MenuTab`/`MenuView`/`MenuButton`), the native glyph/item-model **scene art** pipeline + auto-served resource pack, customization, and per-platform menu adapters (incl. Bedrock Cumulus forms). |
-| [ui-interaction-system.md](ui-interaction-system.md) | The unified, inheritance-based item model shared by chest menus **and** the dynamic lobby hotbar: the `UiItem` render spec, `MenuButton`/`HotbarItem`, the single Paper materializer, `HotbarController`/`HotbarProfile`/`HotbarScope`, cross-world item hygiene, and how to add an item. |
-| [ui-and-localization.md](ui-and-localization.md) | Boss bars, native scoreboard HUD panels, the declarative HUD-driver system (BetterHud + sidebar fallback), popups, per-player UI release/restore, the decor (hologram) system, and the `<lang:>` client-side localization + `MessageService`. |
-| [commands.md](commands.md) | The `/sx` (`/sexidium`) command tree: every subcommand + args + permission bucket + tab completion, and the two adapter command bridges. |
-| [networking-bot-ranks.md](networking-bot-ranks.md) | The localhost HTTP API, the resource-pack server, Discord bot process management, the token-gated auth linking flow, ranks/points, and the shared SQLite schema + migrations. |
-| [network-transfer.md](network-transfer.md) | Multi-node world ownership and player movement: the `world_placements` state machine, the per-grant **fence** that makes an evicted holder find out, the timing invariant between heartbeat/lease/node-timeout, the addressed idempotent transfer ticket + loop breaker, boot reconciliation, and the `/sx admin net` operator surface. |
-| [deployment.md](deployment.md) | Operating the multi-server network on a Portainer host: topology and adding a node, the shared Paper installation vs. each node's working directory (and what can never be shared), credentials, deploy/update/restart, running the test suites remotely, the 11 `status` checks, logs, rollback, and the `scripts/remote.sh` reference. |
-| [reference-tech.md](reference-tech.md) | Decision log: UI/GUI techniques evaluated (forms, maps, display entities, `/dialog`, native screens) and Modrinth libraries/mechanics evaluated against the dual-adapter / no-fat-jar rule — each marked implemented / future / rejected. |
-| [known-issues.md](known-issues.md) | Severity-tagged, re-verified findings (open bugs, parity gaps, design notes) with a record of what was fixed since the last review. |
+| [architecture/overview.md](architecture/overview.md) | System map: the core ↔ adapter split, the `SexidiumCore` wiring graph, startup/shutdown lifecycle, command/event flow, and a subsystem inventory pointing at every page below. **Start here.** |
+| [architecture/platform-and-adapters.md](architecture/platform-and-adapters.md) | The platform SPI (`ServerAdapter` & friends, value-model records/enums, default-method capability degradation, noop/headless impls) **and** both adapter implementations (Paper, NeoForge) with a parity-gaps table. |
+| [architecture/game-framework.md](architecture/game-framework.md) | The match engine only: `GameManager`, `ActiveMatch`, `AbstractGame`/`BaseTimedGame`, `GameState`, registry/descriptors/factories, countdowns, event routing, mid-match join, and the start → run → end → teardown lifecycle. |
 
-### Base instruction prompts (`Prompt.*.md`)
+### [`gameplay/`](gameplay/) — what players play
 
-Task-oriented **how-to-change-it** guides, one per module — written to be loaded as base context
-(by a contributor or an AI agent) before working on that module. The topic pages above describe how a
-system *behaves*; the prompt files prescribe the *workflow*: which files to touch, in what order, which
-drift-guard tests will fail, and which doc to update in the same change.
+| Document | Covers |
+|----------|--------|
+| [gameplay/minigames.md](gameplay/minigames.md) | The 5 competitive minigames (Race, Gather, TNT War, Combat, Fugitive): phases, teams/roles, win detection, min players, aliases, battle maps, config. Timed, with a winner. |
+| [gameplay/experiences.md](gameplay/experiences.md) | Player-built persistent Experiences: the 27 challenges, how they **compose** via shared drop/damage/health pipelines + `ChallengeContext`, world-type selection, the auto team system, ownership/join model, and persistence. |
+| [gameplay/chaos.md](gameplay/chaos.md) | The third family: one shared open world where **each player** gets an independent random twist set, reshuffled on a timer (previous effects reset first). Reuses the experience composition layer, scoped per player. |
+| [gameplay/lobby-worlds-and-social.md](gameplay/lobby-worlds-and-social.md) | The pre-match layer everything arrives through: the unified `LobbyManager` state machine (party + queue + friends + invites), disposable temp-world leasing + warm pool + reconnect/cleanup, world naming/generation, on-disk layout, lobby protection/nav/HUD, and lobby NPCs. |
+| [gameplay/challenges/](gameplay/challenges/) | Research notes on the 15 YouTube "Minecraft, but…" formats that seeded the catalog — one page per format with the rule, its edge cases, and (where written back) the shipped server-safe bound. Research input, not a code reference. |
 
-| Prompt | Workflow it prescribes |
-|--------|------------------------|
-| [Prompt.challenge.md](Prompt.challenge.md) | Add/modify an experience challenge: catalog registration, composition pipelines, HUD contribution, world-generating (SkyBlock-style) challenges, chest-GUI/icon wiring, config + drift guards. |
-| [Prompt.minigames.md](Prompt.minigames.md) | Add/modify a minigame: descriptor registration, base-class choice, battle maps + in-world editor, HUD, awards/win flow, menu icons, config. |
-| [Prompt.menus.md](Prompt.menus.md) | Add/modify a chest-GUI screen: `MenuService` facade rules, the cross-play (Bedrock) constraints, custom art tables, per-player state hygiene. |
-| [Prompt.worlds.md](Prompt.worlds.md) | Work on managed worlds: leasing seams, naming, linked dimensions, void generation, safe spawn, the structure/loot generation engine, bundled worlds. |
-| [Prompt.platform.md](Prompt.platform.md) | Add a platform capability: the default-method seam pattern, capability flags, Paper/NeoForge parity, POJO-fake testing. |
-| [Prompt.commands.md](Prompt.commands.md) | Add/modify a command: dispatch buckets, the `/sx admin` arg-reslice pattern, tab completion, bilingual i18n. |
-| [Prompt.bot.md](Prompt.bot.md) | Work on the Discord bot / RPC bridge: the Zod contract as source of truth, slash-command registration, rendered cards, supervision rules. |
-| [Prompt.youtube-challenge.md](Prompt.youtube-challenge.md) | Turn a YouTuber "Minecraft, but…" format into a challenge: harvesting titles/descriptions/transcripts with `yt-dlp`, mining them for the rule and its edge cases, and designing the server-safe bound (radius + per-tick budget + catch-up) before implementing. Front-end to `Prompt.challenge.md`. |
+### [`interface/`](interface/) — what players touch
+
+| Document | Covers |
+|----------|--------|
+| [interface/commands.md](interface/commands.md) | The `/sx` (`/sexidium`) command tree and `/lobby`: every subcommand + args + permission bucket + tab completion, and the two adapter command bridges. |
+| [interface/menus.md](interface/menus.md) | The declarative menu framework (`MenuCatalog`/`MenuTab`/`MenuView`/`MenuButton`), `MenuArt` as single source of truth, the native glyph/`item_model` **scene art** pipeline + auto-served resource pack, and per-platform menu adapters (incl. Bedrock Cumulus forms). |
+| [interface/ui-interaction-system.md](interface/ui-interaction-system.md) | The one item model shared by chest menus **and** the dynamic lobby hotbar: the `UiItem` render spec, `MenuButton`/`HotbarItem`, the single Paper materializer, `HotbarController`/`HotbarProfile`/`HotbarScope`, cross-world item hygiene, and how to add an item. |
+| [interface/ui-and-localization.md](interface/ui-and-localization.md) | Boss bars, native scoreboard HUD panels, the declarative HUD-driver system (BetterHud + sidebar fallback), popups, per-player UI release/restore, the decor (hologram) system, and `<lang:>` client-side localization + `MessageService`. |
+
+> **Cross-play is a hard rule.** A UI technique is acceptable only if it has a defined answer for a
+> Java client with the pack, a Java client without it, and a Bedrock client via Geyser/Floodgate —
+> which never receives a Java pack. See [interface/README.md](interface/).
+
+### [`operations/`](operations/) — running the network
+
+| Document | Covers |
+|----------|--------|
+| [operations/deployment.md](operations/deployment.md) | The host and the node lifecycle: Portainer topology and adding a node, the shared Paper installation vs. each node's working directory (and what can never be shared), volume layout, credentials, deploy/update/restart, running the test suites remotely, the `status` checks, logs, rollback, and the `scripts/remote.sh` reference. |
+| [operations/network-transfer.md](operations/network-transfer.md) | The world-ownership protocol between nodes: the `world_placements` state machine, the per-grant **fence** that makes an evicted holder find out, the heartbeat/lease/node-timeout timing invariant, the addressed idempotent transfer ticket + loop breaker, boot reconciliation, and `/sx admin net`. |
+| [operations/networking-bot-ranks.md](operations/networking-bot-ranks.md) | Out-of-process services and the shared schema: the loopback HTTP API, the resource-pack server, the WebSocket RPC bridge, Discord bot process management, the token-gated auth-linking flow, ranks/points, and the `sexidium.db` schema + migrations. |
+
+### [`reference/`](reference/) — re-verified logs
+
+| Document | Covers |
+|----------|--------|
+| [reference/tech-decisions.md](reference/tech-decisions.md) | Decision log that only grows: UI/GUI techniques evaluated (forms, maps, display entities, `/dialog`, native screens) and Modrinth libraries/mechanics evaluated against the dual-adapter / no-fat-jar rule — each marked implemented / future / rejected, with the reason. |
+| [reference/known-issues.md](reference/known-issues.md) | Severity-tagged, re-verified findings (open bugs, parity gaps, design notes) with line refs, plus what was fixed since the last review. Re-checked and pruned each pass, never appended to blindly. |
+
+### [`guides/`](guides/) — how to change it
+
+Task-oriented **how-to-change-it** documents, one per module — written to be loaded as base context
+(by a contributor or an AI agent) before working on that module. The pages above describe how a system
+*behaves*; a guide prescribes the *workflow*: which files to touch, in what order, which drift-guard
+tests will fail, and which doc to update in the same change. Each ends in a checklist.
+
+| Guide | Workflow it prescribes |
+|-------|------------------------|
+| [guides/add-a-challenge.md](guides/add-a-challenge.md) | Add/modify an experience challenge: catalog registration, composition pipelines, HUD contribution, world-generating (SkyBlock-style) challenges, chest-GUI/icon wiring, config + drift guards. |
+| [guides/add-a-minigame.md](guides/add-a-minigame.md) | Add/modify a minigame: descriptor registration, base-class choice, battle maps + in-world editor, HUD, awards/win flow, menu icons, config. |
+| [guides/add-a-menu-screen.md](guides/add-a-menu-screen.md) | Add/modify a chest-GUI screen: `MenuService` facade rules, the cross-play (Bedrock) constraints, custom art tables, per-player state hygiene. |
+| [guides/add-a-command.md](guides/add-a-command.md) | Add/modify a command: dispatch buckets, the `/sx admin` arg-reslice pattern, tab completion, bilingual i18n. |
+| [guides/add-a-platform-capability.md](guides/add-a-platform-capability.md) | Add a platform capability: the default-method seam pattern, capability flags, Paper/NeoForge parity, POJO-fake testing. |
+| [guides/work-on-worlds.md](guides/work-on-worlds.md) | Work on managed worlds: leasing seams, naming, linked dimensions, void generation, safe spawn, the structure/loot generation engine, bundled worlds, map-editing tooling. |
+| [guides/work-on-the-bot.md](guides/work-on-the-bot.md) | Work on the Discord bot / RPC bridge: the Zod contract as source of truth, slash-command registration, rendered cards, supervision rules. |
+| [guides/research-a-youtube-challenge.md](guides/research-a-youtube-challenge.md) | Turn a YouTuber "Minecraft, but…" format into a challenge: harvesting titles/descriptions/transcripts with `yt-dlp`, mining them for the rule and its edge cases, and designing the server-safe bound (radius + per-tick budget + catch-up) before implementing. Front-end to `add-a-challenge.md`. |
+
+These were previously `docs/Prompt.*.md`; [guides/README.md](guides/) carries the full old → new
+name table.
 
 ---
 
@@ -107,9 +141,13 @@ drift-guard tests will fail, and which doc to update in the same change.
 **These docs are part of the code.** A change that alters behavior is not done until the docs that
 describe it are updated in the *same* change. Treat doc drift as a bug.
 
-1. **One domain → one file.** Each page above owns exactly one slice of logic. Add new material to
-   the page that owns the domain; do **not** create a new top-level doc per feature. If a genuinely
-   new domain appears, add one page here and link it from this index and from `architecture.md`.
+1. **One domain → one file; one family of domains → one folder.** Each page owns exactly one slice
+   of logic, and each of the six folders owns one family of them. Add new material to the page that
+   owns the domain; do **not** create a new doc per feature. A genuinely new domain gets one page
+   inside whichever of the six folders it belongs to — `architecture/`, `gameplay/`, `interface/`,
+   `operations/`, `reference/`, `guides/` — linked from that folder's `README.md` and from this
+   index. If it fits none of them, say so explicitly in the change and justify a seventh folder;
+   a stray top-level `docs/*.md` is not an option.
 2. **Code wins.** When a doc disagrees with the code, the code is correct — fix the doc. Cite
    anchors as `path:line` or `Class#method` so claims stay checkable.
 3. **Update-in-the-same-PR.** Each page's *"Keeping this current"* footer lists its authoritative
@@ -117,10 +155,10 @@ describe it are updated in the *same* change. Treat doc drift as a bug.
    added/removed) that require an edit. When you touch those files, touch the page.
 4. **Keep it lean.** Prefer editing a sentence over appending a section. Remove stale content
    instead of leaving it contradicted. Cross-link siblings rather than duplicating them.
-5. **Re-verify on review.** [known-issues.md](known-issues.md) is re-checked against current code,
+5. **Re-verify on review.** [reference/known-issues.md](reference/known-issues.md) is re-checked against current code,
    not appended-to blindly — drop fixed findings, keep open ones with fresh line refs.
 
-> Re-running the unification: this 12-page set was produced by reading every doc and verifying it
+> Re-running the unification: this set was produced by reading every doc and verifying it
 > against the source. To repeat after large drift, re-analyze each domain against its source files
 > and rewrite the owning page — do not let per-feature docs accumulate.
 
@@ -138,7 +176,7 @@ described in these docs is not currently part of the build.
 
 Test reports land in `build/packages-<module>/reports/tests/test/`, **not** under
 `packages/*/build/`. The authoritative gate runs on the deployment host, where no tool can be
-missing: `scripts/remote.sh test` (see [deployment.md §8](deployment.md#8-running-tests-remotely)).
+missing: `scripts/remote.sh test` (see [operations/deployment.md §8](operations/deployment.md#8-running-tests-remotely)).
 Beware that a bare `scripts/test/run.sh` *skips* a stage whose tool is absent and still exits 0 —
 run it as `SX_TEST_STRICT=1 scripts/test/run.sh` to make a skip a failure.
 
@@ -174,11 +212,13 @@ Source of truth: [`CoreGameRegistryInitializer.java`](../packages/core/src/main/
 | `combat` | Combat Item Mode | 2 | `kit`, `kitpvp` |
 | `fugitive` | Fugitive | 3 | `manhunt`, `thefugitive`, `fled` |
 
-Full mechanics: [minigames.md](minigames.md).
+Full mechanics: [gameplay/minigames.md](gameplay/minigames.md).
 
 ### Experience challenges — `/sx start experience <challenge…>`
 
 Composable, not standalone modes. Any combination runs together in one persistent survival world.
+All 27, in `ChallengeCatalog` registration order. (Four ids — `evolvingmobs`, `tntmobs`, `lavafloor`,
+`midastouch` — are **retired**: gone for good, and ignored rather than refused on old worlds.)
 
 | Challenge ID | Display name | What it does |
 |--------------|--------------|--------------|
@@ -197,8 +237,20 @@ Composable, not standalone modes. Any combination runs together in one persisten
 | `growing` | Endless Growth | You grow larger the longer you live. |
 | `jumpenchants` | Jump Enchants | Jumping randomly enchants your gear. |
 | `mobduplication` | Mob Duplication | Hitting a mob can duplicate it. |
+| `chunkbreak` | Chunk Break | Break one block, break its type in that chunk. |
+| `lookmultiplies` | Look Multiplies | Everything you look at multiplies. |
+| `jumpmultiplies` | Jump Multiplies | Every jump duplicates every entity around you. |
+| `randomlayers` | Random Layers | New random layers are added every day. |
+| `randomskyblock` | Random Skyblock | One void block gives random items as you break it. |
+| `randommob` | Random Mob | Random mobs spawn beside you on a timer. |
+| `randomdrops` | Randomized Drops | Blocks and mobs drop a random item each time. |
+| `randomevents` | Random Events | A chaotic random event fires every so often. |
+| `classicskyblock` | Classic Skyblock | The classic vanilla Skyblock island, with a Nether mirror. |
+| `omnichunk` | Omni Chunk | Every block you place or break copies into every chunk. |
+| `layereddimensions` | Layered Dimensions | One chunk of stacked layers in every dimension — dig down through all of them. |
+| `deathresets` | Death Resets | Hardcore with no goals — when anyone dies, everyone resets and the world is regenerated. |
 
-Full mechanics + composition rules: [experiences.md](experiences.md).
+Full mechanics + composition rules: [gameplay/experiences.md](gameplay/experiences.md).
 
 ---
 
@@ -217,5 +269,5 @@ Full mechanics + composition rules: [experiences.md](experiences.md).
 
 ---
 
-*This index is a navigation hub. For open bugs and parity gaps, see [known-issues.md](known-issues.md).
+*This index is a navigation hub. For open bugs and parity gaps, see [reference/known-issues.md](reference/known-issues.md).
 For the docs-stay-current contract, see [§4](#4-documentation-maintenance-policy).*

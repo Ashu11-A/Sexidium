@@ -2,7 +2,7 @@
 
 You are working on Sexidium's **managed worlds**: the lobby, disposable minigame temp worlds, cloned
 arena maps, and persistent experience worlds with linked Nether/End dimensions. Reference:
-[lobby-worlds-and-social.md](lobby-worlds-and-social.md). All policy (naming, pooling, disposal) lives in
+[lobby-worlds-and-social.md](../gameplay/lobby-worlds-and-social.md). All policy (naming, pooling, disposal) lives in
 core; platform backends are thin executors.
 
 ## Key files
@@ -74,7 +74,7 @@ core; platform backends are thin executors.
   kept). A folder with no stamp is **adopted**, never replaced — that is what keeps an upgrade from wiping
   maps seeded by an older jar. The **lobby** has no equivalent: it is a live loaded world by then, so
   `LobbyBundle` stays seed-if-missing. NeoForge does not extract bundles — note parity impacts in
-  [known-issues.md](known-issues.md).
+  [known-issues.md](../reference/known-issues.md).
 
 ## Editing a map (tooling)
 
@@ -100,7 +100,7 @@ Facts worth keeping:
   testing the stale map by mistake.
 - **Schematics are tracked in `assets/schematics/`**, and provisioning copies them into FAWE's folder
   (newer-source-only). `//schem save` writes into gitignored `test/paper/` — copy anything worth keeping
-  back by hand. See [`assets/schematics/README.md`](../assets/schematics/README.md).
+  back by hand. See [`assets/schematics/README.md`](../../assets/schematics/README.md).
 - **Client mods install into their own game directory** (`~/.minecraft/sexidium-world-editing`), not the
   shared `~/.minecraft/mods`: one mods folder is read by every profile, so Fabric jars sitting beside
   NeoForge ones break the other loader's launch.
@@ -130,7 +130,7 @@ Facts worth keeping:
 - [ ] World-scoped adapter calls (`isChunkLoaded`/`loadChunk`/`convertChunk`/build heights) go through
       `WorldAdapter.inWorld(name)` — they answer for the adapter you hold, not the position you pass
 - [ ] Anything that changes terrain is unreachable for an already-created world
-- [ ] [lobby-worlds-and-social.md](lobby-worlds-and-social.md) updated in the same change
+- [ ] [lobby-worlds-and-social.md](../gameplay/lobby-worlds-and-social.md) updated in the same change
 
 ---
 *Keeping this current: tracks `AbstractWorldControl`/`WorldLeaseService`/`WorldNaming`,

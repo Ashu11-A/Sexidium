@@ -193,7 +193,7 @@ adopt_manually_installed_betterhud() {
 # not a range check against 84..99.
 #
 # Add a version here only after diffing the overlay against that version's vanilla shaders — the technique
-# is in docs/known-issues.md. Guessing from the declared range is exactly what produces F62.
+# is in docs/reference/known-issues.md. Guessing from the declared range is exactly what produces F62.
 betterhud_overlay_matches() {
     case "$PAPER_VERSION" in
         26.1 | 26.1.*) return 0 ;;

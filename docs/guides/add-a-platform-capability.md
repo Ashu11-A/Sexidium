@@ -3,7 +3,7 @@
 You are extending Sexidium's **platform SPI** — the seam that keeps all gameplay logic in
 `packages/core` while Paper/NeoForge supply thin adapters. This is the single most repeated workflow in
 the repo: almost every feature adds one or two seams. Reference:
-[platform-and-adapters.md](platform-and-adapters.md).
+[platform-and-adapters.md](../architecture/platform-and-adapters.md).
 
 ## Key files
 
@@ -13,7 +13,7 @@ the repo: almost every feature adds one or two seams. Reference:
 | Value model | `…/core/platform/model/` — records/enums only (`WorldPosition`, `BlockPosition`, `ItemKey`, `ItemStackData`, `WorldDimension`, `GameModeType`, …) |
 | Paper implementations | `packages/module-paper/src/main/java/com/sexidium/paper/adapter/**` (+ `…/adapter/util/PaperConverters.java` for core↔Bukkit conversion) |
 | NeoForge implementations | `packages/module-neoforge/…` (reflection-based; frequently left on defaults) |
-| Parity ledger | [known-issues.md](known-issues.md) + the parity table in [platform-and-adapters.md](platform-and-adapters.md) |
+| Parity ledger | [known-issues.md](../reference/known-issues.md) + the parity table in [platform-and-adapters.md](../architecture/platform-and-adapters.md) |
 
 ## The pattern
 
@@ -24,7 +24,7 @@ the repo: almost every feature adds one or two seams. Reference:
    Never leak a Bukkit type into a signature — extend the value model in `platform/model/` instead
    (records, no behaviour beyond validation/parsing).
 3. **NeoForge**: implement if cheap; otherwise the default stands — record the gap in the parity table /
-   [known-issues.md](known-issues.md) so it is a decision, not an accident.
+   [known-issues.md](../reference/known-issues.md) so it is a decision, not an accident.
 4. **Ambiguity guard**: if "the degraded result" is indistinguishable from a legitimate result (an empty
    loot list could mean *drops nothing* or *cannot tell*), add a **capability flag** the caller checks —
    `WorldAdapter.resolvesBlockLoot()` is the model. Same idea for handles:
@@ -54,7 +54,7 @@ the repo: almost every feature adds one or two seams. Reference:
 - [ ] NeoForge implemented **or** gap recorded
 - [ ] Capability flag if empty/`null` is ambiguous
 - [ ] POJO-fake unit test exercising the core logic through the seam
-- [ ] [platform-and-adapters.md](platform-and-adapters.md) updated in the same change
+- [ ] [platform-and-adapters.md](../architecture/platform-and-adapters.md) updated in the same change
 
 ---
 *Keeping this current: tracks the `platform/` SPI package, `platform/model/`, `PaperConverters` and the

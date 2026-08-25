@@ -11,7 +11,7 @@ import com.sexidium.core.menu.UiItem;
  * {@link UiItem} icon, and handles a click in {@link #onClick}. Both a button and a hotbar item render
  * through the one platform materializer via their {@code UiItem}, which is what "unifies" the chest and
  * hotbar systems. To add an item: subclass this and register it in a {@link HotbarProfile}. See
- * {@code docs/ui-interaction-system.md}.</p>
+ * {@code docs/interface/ui-interaction-system.md}.</p>
  */
 public abstract class HotbarItem {
   /** A stable, unique-within-its-profile routing token (also its PDC tag on the platform item). */

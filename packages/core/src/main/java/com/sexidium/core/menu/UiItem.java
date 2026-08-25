@@ -16,7 +16,7 @@ import java.util.UUID;
  *
  * <p>{@code headOwner} textures a {@code player_head} icon with that player's real skin (Bedrock-legible
  * rosters); {@code model} wears a bespoke Sexidium texture for pack-loaded Java viewers and degrades to
- * the vanilla {@link #icon()} material otherwise. See {@code docs/ui-interaction-system.md}.</p>
+ * the vanilla {@link #icon()} material otherwise. See {@code docs/interface/ui-interaction-system.md}.</p>
  */
 public record UiItem(ItemKey icon, int amount, String name, List<String> lore, UUID headOwner, String model) {
   public UiItem {
