@@ -4,7 +4,6 @@ import com.sexidium.core.menu.MenuArt;
 import com.sexidium.core.menu.MenuButton;
 import com.sexidium.core.menu.MenuContext;
 import com.sexidium.core.menu.MenuView;
-import com.sexidium.core.menu.scene.SceneTemplates;
 import com.sexidium.core.platform.MenuAdapter;
 import com.sexidium.core.platform.PlayerAdapter;
 import com.sexidium.core.platform.model.ItemKey;
@@ -26,8 +25,6 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -203,33 +200,6 @@ public final class PaperMenuAdapter implements MenuAdapter, Listener {
     if (event.getInventory().getHolder() instanceof SexidiumMenuHolder) {
       animatedMenus.remove(event.getPlayer().getUniqueId());
     }
-  }
-
-  private Map<Integer, MenuButton> screenButtons(MenuView view) {
-    // The two baked hub variants route clicks across their (different) card grids; every other screen keeps
-    // its declared per-slot buttons.
-    boolean op;
-    if ("main-hub".equals(view.screenArt())) {
-      op = false;
-    } else if ("main-hub-op".equals(view.screenArt())) {
-      op = true;
-    } else {
-      return view.buttons();
-    }
-    List<Map.Entry<Integer, MenuButton>> buttons = new ArrayList<>(view.buttons().entrySet());
-    buttons.sort(Comparator.comparingInt(Map.Entry::getKey));
-    // Each baked hub card spans several slots, so route a click anywhere on the card (its whole slot group)
-    // to that tab — otherwise only one slot under each card would be clickable.
-    int[][] groups = SceneTemplates.hubHitGroups(op);
-    Map<Integer, MenuButton> routed = new LinkedHashMap<>();
-    int count = Math.min(buttons.size(), groups.length);
-    for (int index = 0; index < count; index++) {
-      MenuButton button = buttons.get(index).getValue();
-      for (int slot : groups[index]) {
-        routed.put(slot, button);
-      }
-    }
-    return routed;
   }
 
   @Override
