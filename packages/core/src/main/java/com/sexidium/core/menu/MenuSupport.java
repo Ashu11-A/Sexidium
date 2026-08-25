@@ -46,7 +46,7 @@ final class MenuSupport {
   final NpcManager npcManager;
 
   // Per-player in-progress challenge selection for the experience builder (reset at each entry point).
-  final Map<UUID, Set<String>> builderSelection = new LinkedHashMap<>();
+  final Map<UUID, Set<String>> builderSelection = new ConcurrentHashMap<>();
   // Per-player map type chosen in the experience builder (absent = a normal terrain world). Single-valued
   // on purpose: it is what makes the map-generating twists mutually exclusive.
   final Map<UUID, ExperienceWorldType> builderWorldType = new ConcurrentHashMap<>();
@@ -103,7 +103,9 @@ final class MenuSupport {
     if (player != null) {
       liveScreens.remove(player.uniqueId());
     }
-    serverAdapter.menus().open(player, view);
+    if (serverAdapter != null && serverAdapter.menus() != null) {
+      serverAdapter.menus().open(player, view);
+    }
   }
 
   /**
@@ -130,7 +132,7 @@ final class MenuSupport {
     }
     for (Map.Entry<UUID, Consumer<PlayerAdapter>> entry : new ArrayList<>(liveScreens.entrySet())) {
       Consumer<PlayerAdapter> render = liveScreens.remove(entry.getKey());
-      if (render == null) {
+      if (render == null || serverAdapter == null) {
         continue;
       }
       PlayerAdapter viewer = serverAdapter.player(entry.getKey())
@@ -143,13 +145,15 @@ final class MenuSupport {
       // both entity operations, and this loop is driven from the global region (a bus message, or a
       // change made by somebody else entirely) — which on Folia is the wrong thread for every one of
       // these viewers, and throws rather than racing.
-      serverAdapter.scheduler().runForPlayer(viewer, () -> {
-        // Re-asked here rather than above: between the hop being scheduled and it running, the viewer
-        // can log out or move to a screen of their own.
-        if (viewer.online() && serverAdapter.menus().isOpen(viewer)) {
-          render.accept(viewer);
-        }
-      }, null);
+      if (serverAdapter.scheduler() != null) {
+        serverAdapter.scheduler().runForPlayer(viewer, () -> {
+          // Re-asked here rather than above: between the hop being scheduled and it running, the viewer
+          // can log out or move to a screen of their own.
+          if (viewer.online() && serverAdapter.menus() != null && serverAdapter.menus().isOpen(viewer)) {
+            render.accept(viewer);
+          }
+        }, null);
+      }
     }
   }
 
@@ -233,22 +237,27 @@ final class MenuSupport {
    */
   void openPlayerPicker(PlayerAdapter viewer, String title, Predicate<PlayerAdapter> include,
       Consumer<PlayerAdapter> onPick, MenuButton back) {
-    MenuView view = new MenuView(title, 6);
-    int slot = 0;
+    openPlayerPicker(viewer, title, 0, include, onPick, back);
+  }
+
+  void openPlayerPicker(PlayerAdapter viewer, String title, int page, Predicate<PlayerAdapter> include,
+      Consumer<PlayerAdapter> onPick, MenuButton back) {
+    List<PlayerAdapter> candidates = new ArrayList<>();
     for (PlayerAdapter candidate : serverAdapter.onlinePlayers()) {
-      if (slot >= 45) {
-        break;
+      if (include == null || include.test(candidate)) {
+        candidates.add(candidate);
       }
-      if (!include.test(candidate)) {
-        continue;
-      }
-      view.set(slot++, MenuButton.head(candidate.uniqueId(), "<white>" + escape(candidate.name()) + "</white>",
-          List.of("<yellow>Click to select</yellow>"), ctx -> onPick.accept(candidate)));
     }
-    if (slot == 0) {
-      view.set(22, MenuButton.label(ItemKey.minecraft("barrier"), "<gray>No players available</gray>", List.of()));
-    }
-    view.set(view.size() - 9, back);
+    MenuView view = PaginatedScreen.<PlayerAdapter>of(title)
+        .background(MenuArt.BG_FRIENDS)
+        .items(candidates)
+        .page(page)
+        .emptyIndicator(MenuButton.label(ItemKey.minecraft("barrier"), "<gray>No players available</gray>", List.of()))
+        .itemMapper(candidate -> MenuButton.head(candidate.uniqueId(), "<white>" + escape(candidate.name()) + "</white>",
+            List.of("<yellow>Click to select</yellow>"), ctx -> onPick.accept(candidate)))
+        .onPageChange(p -> openPlayerPicker(viewer, title, p, include, onPick, back))
+        .back(back)
+        .build();
     open(viewer, view);
   }
 
@@ -342,7 +351,7 @@ final class MenuSupport {
   // ----- experience-builder selection state ----------------------------------------------------
 
   Set<String> builderSelectionFor(UUID id) {
-    return builderSelection.computeIfAbsent(id, ignored -> new LinkedHashSet<>());
+    return builderSelection.computeIfAbsent(id, ignored -> java.util.Collections.synchronizedSet(new LinkedHashSet<>()));
   }
 
   /** The map type the player currently has chosen in the builder (normal terrain until they change it). */
@@ -367,6 +376,22 @@ final class MenuSupport {
 
   void setBuilderHardcore(UUID id, boolean hardcore) {
     builderHardcore.put(id, hardcore);
+  }
+
+  String editingExperience(UUID id) {
+    return editingExperience.get(id);
+  }
+
+  void setEditingExperience(UUID id, String expId) {
+    if (expId == null) {
+      editingExperience.remove(id);
+    } else {
+      editingExperience.put(id, expId);
+    }
+  }
+
+  void clearEditingExperience(UUID id) {
+    editingExperience.remove(id);
   }
 
   /** Resets the experience-builder selection for a fresh "Create Experience" / "Edit challenges" entry. */

@@ -11,6 +11,8 @@ import com.sexidium.core.platform.ServerAdapter;
 import com.sexidium.core.platform.model.ItemKey;
 import com.sexidium.core.platform.model.WorldPosition;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,9 +31,7 @@ final class AdminMenu {
   }
 
   /**
-   * The operator-only settings hub reached from the main menu. The entry point itself is gated in
-   * {@link HubMenu#openMain}, and every callback re-checks {@code sexidium.admin} so a stale/forged click on a
-   * cached inventory cannot reach a privileged action.
+   * The operator-only settings hub reached from the main menu. Gated on {@code sexidium.admin}.
    */
   void openAdminSettings(PlayerAdapter player) {
     NpcManager npcManager = support.npcManager;
@@ -39,39 +39,54 @@ final class AdminMenu {
       player.sendActionBar("<red>You don't have permission for that.</red>");
       return;
     }
-    MenuView view = new MenuView("<red><bold>Admin Settings</bold></red>", 3).background(MenuArt.BG_ADMIN);
-    view.set(11, MenuButton.of(ItemKey.minecraft("armor_stand"), "<gold><bold>Manage NPCs</bold></gold>",
+
+    MenuView view = new MenuView("<red><bold>Admin Settings</bold></red>", ChestLayout.ROWS)
+        .plainRows(ChestLayout.ROWS)
+        .background(MenuArt.BG_ADMIN);
+
+    ChestLayout.fillSeparators(view);
+
+    // Sidebar: Unified persistent navigation rail with ADMIN_SETTINGS marked active
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.ADMIN_SETTINGS);
+
+    // Content: Balanced 2x2 Grid (slots 13, 15 and 22, 24)
+    int npcCount = npcManager != null ? npcManager.definitions().size() : 0;
+    view.set(13, MenuButton.of(ItemKey.minecraft("armor_stand"), "<gold><bold>Manage NPCs</bold></gold>",
         List.of("<gray>Edit skin, minigame, hologram,</gray>", "<gray>position and deletion</gray>",
-            "<gray>Configured: <white>" + npcManager.definitions().size() + "</white></gray>",
-            "<yellow>Click to open</yellow>"),
+            "<gray>Configured: <white>" + npcCount + " NPCs</white></gray>",
+            "<yellow>Click to open NPC list</yellow>"),
         ctx -> menus.openNpcList(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_NPC)));
-    view.set(13, MenuButton.of(ItemKey.minecraft("player_head"), "<green><bold>Create NPC Here</bold></green>",
-        List.of("<gray>Spawns a new NPC at your position</gray>", "<gray>then opens its editor</gray>",
+
+    view.set(15, MenuButton.of(ItemKey.minecraft("player_head"), "<green><bold>+ Create NPC Here</bold></green>",
+        List.of("<gray>Spawns a new NPC at your exact location</gray>", "<gray>then opens its editor</gray>",
             "<yellow>Click to create</yellow>"),
         ctx -> createNpcHere(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_NPC_CREATE)));
-    view.set(15, MenuButton.of(ItemKey.minecraft("lever"), "<aqua><bold>Reload NPCs</bold></aqua>",
-        List.of("<gray>Re-read and respawn all NPCs</gray>", "<yellow>Click to reload</yellow>"),
+
+    view.set(22, MenuButton.of(ItemKey.minecraft("lever"), "<aqua><bold>Reload All NPCs</bold></aqua>",
+        List.of("<gray>Re-read and respawn all NPCs from storage</gray>", "<yellow>Click to reload</yellow>"),
         ctx -> {
-          npcManager.reloadAndSpawn();
+          if (npcManager != null) {
+            npcManager.reloadAndSpawn();
+          }
           ctx.player().sendActionBar("<green>Reloaded lobby NPCs.</green>");
           menus.openAdminSettings(ctx.player());
         }).withModel(MenuArt.model(MenuArt.ICON_RELOAD)));
-    view.set(4, MenuButton.of(ItemKey.minecraft("item_frame"), "<gold><bold>Menu Art Calibration</bold></gold>",
-        List.of("<gray>Overlay the vanilla slot grid + a ruler</gray>",
-            "<gray>to align the menu art (Java pack only)</gray>",
-            "<gray>Current nudge: <white>dx=" + MenuArt.calibrateDx() + " dy=" + MenuArt.calibrateDy() + "</white></gray>",
-            "<yellow>Click to open the grid</yellow>"),
+
+    view.set(24, MenuButton.of(ItemKey.minecraft("item_frame"), "<gold><bold>Menu Art Calibration</bold></gold>",
+        List.of("<gray>Overlay the vanilla slot grid + 1px ruler</gray>",
+            "<gray>to visually align menu art (Java pack only)</gray>",
+            "<gray>Current: <white>dx=" + MenuArt.calibrateDx() + " dy=" + MenuArt.calibrateDy() + "</white></gray>",
+            "<yellow>Click to open alignment grid</yellow>"),
         ctx -> openMenuCalibration(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_EDIT_CHALLENGES)));
-    view.set(view.size() - 9, support.backButton(() -> menus.openMain(player)));
+
+    // Bottom Navigation
+    view.set(ChestLayout.SLOT_BACK, support.backButton(() -> menus.openMain(player)));
     support.open(player, view);
   }
 
   /**
-   * The menu-art calibration grid: a full chest whose background paints the EXACT vanilla slot grid plus a
-   * 1px ruler, with a marker item in every slot as ground truth. A pack-loaded Java client should show each
-   * cyan box framing the item in its slot; any consistent up/left (or down/right) gap is the miscalibration.
-   * Read it off the ruler, set {@code ui.menu-art.calibrate-dx} (+ = right) and {@code -dy} (+ = down) in
-   * config.yml, restart, and re-open (the client re-downloads the pack because its SHA changes with dy).
+   * The menu-art calibration grid: a 54-slot chest whose background paints the EXACT vanilla slot grid plus a
+   * 1px ruler, with 35 slot markers in the content area as ground truth.
    */
   void openMenuCalibration(PlayerAdapter player) {
     if (!player.hasPermission(CoreCommandService.ADMIN_PERMISSION)) {
@@ -80,204 +95,295 @@ final class AdminMenu {
     }
     int dx = MenuArt.calibrateDx();
     int dy = MenuArt.calibrateDy();
-    // background() (not screenArt()) keeps every slot item visible — the grid is compared against them.
-    MenuView view = new MenuView("<gold><bold>Art Calibration</bold></gold> <gray>dx=" + dx + " dy=" + dy + "</gray>", 6)
+
+    MenuView view = new MenuView("<gold><bold>Art Calibration</bold></gold> <gray>dx=" + dx + " dy=" + dy + "</gray>", ChestLayout.ROWS)
+        .plainRows(ChestLayout.ROWS)
         .background(MenuArt.CALIBRATION_GLYPH_ID);
+
+    ChestLayout.fillSeparators(view);
+
     List<String> lore = List.of(
         "<gray>Cyan box = where the art thinks this slot is</gray>",
         "<gray>Aligned = box frames this item exactly</gray>",
         "<gray>Off up/left → raise calibrate-dx/-dy in config</gray>",
         "<dark_gray>Press Esc to close</dark_gray>");
-    for (int slot = 0; slot < view.size(); slot++) {
+
+    for (int index = 0; index < ChestLayout.CONTENT_CAPACITY; index++) {
+      int slot = ChestLayout.contentSlot(index);
       view.set(slot, MenuButton.label(ItemKey.minecraft("white_stained_glass_pane"),
-          "<white>slot " + slot + "</white>", lore));
+          "<aqua><bold>Content Slot " + index + "</bold></aqua>", lore));
     }
+
+    view.set(ChestLayout.SLOT_BACK, support.back(ctx -> menus.openAdminSettings(ctx.player())));
     support.open(player, view);
-    player.sendActionBar("<gold>Calibration grid: align the cyan boxes to the items, then set ui.menu-art.calibrate-dx/-dy.</gold>");
   }
 
-  /** Creates a fresh NPC at the operator's position with an auto-generated id, then opens its editor. */
-  private void createNpcHere(PlayerAdapter player) {
+  void openNpcList(PlayerAdapter player) {
+    openNpcList(player, 0);
+  }
+
+  void openNpcList(PlayerAdapter player, int page) {
+    NpcManager npcManager = support.npcManager;
     if (!player.hasPermission(CoreCommandService.ADMIN_PERMISSION)) {
       player.sendActionBar("<red>You don't have permission for that.</red>");
       return;
     }
-    WorldPosition position = player.position();
-    if (position == null) {
-      player.sendActionBar("<red>Could not read your position.</red>");
-      return;
-    }
-    String id = nextNpcId();
-    NpcDefinition definition = new NpcDefinition(id, position.worldName(), position.coordinateX(),
-        position.coordinateY(), position.coordinateZ(), position.yaw(), position.pitch(),
-        "", id, "", false, List.of(), "");
-    saveNpcFromMenu(player, definition, () -> {
-      player.sendActionBar("<green>Created NPC <white>" + MenuSupport.escape(id) + "</white>.</green>");
-      menus.openNpcEditor(player, id);
-    });
-  }
 
-  /** First free {@code npc<N>} id, so GUI-created NPCs never collide with existing ones. */
-  private String nextNpcId() {
-    NpcManager npcManager = support.npcManager;
-    int n = npcManager.definitions().size() + 1;
-    while (npcManager.get("npc" + n) != null) {
-      n++;
-    }
-    return "npc" + n;
-  }
+    Collection<NpcDefinition> defs = npcManager != null ? npcManager.definitions() : List.of();
+    List<NpcDefinition> definitions = new ArrayList<>(defs);
 
-  /** A grid of every configured lobby NPC; clicking one opens its editor. */
-  void openNpcList(PlayerAdapter player) {
-    NpcManager npcManager = support.npcManager;
-    MenuView view = new MenuView("<gold><bold>Lobby NPCs</bold></gold>", 6).background(MenuArt.BG_ADMIN);
-    int slot = 0;
-    for (NpcDefinition definition : npcManager.definitions()) {
-      if (slot >= 45) {
-        break;
-      }
-      String modeLabel = definition.minigameMode().isBlank() ? "Manual" : definition.minigameMode();
-      List<String> lore = List.of(
-          "<gray>World: <white>" + MenuSupport.escape(definition.world()) + "</white></gray>",
-          "<gray>Mode: <white>" + MenuSupport.escape(modeLabel) + "</white></gray>",
-          "<yellow>Click to edit</yellow>");
-      String title = "<white><bold>" + MenuSupport.escape(definition.id()) + "</bold></white>";
-      UUID headOwner = onlinePlayerIdByName(definition.skin());
-      MenuButton button = headOwner != null
-          ? MenuButton.head(headOwner, title, lore, ctx -> menus.openNpcEditor(ctx.player(), definition.id()))
-          : MenuButton.of(ItemKey.minecraft("armor_stand"), title, lore, ctx -> menus.openNpcEditor(ctx.player(), definition.id()))
-              .withModel(MenuArt.model(MenuArt.ICON_NPC));
-      view.set(slot++, button);
-    }
-    if (slot == 0) {
-      view.set(22, MenuButton.label(ItemKey.minecraft("barrier"), "<gray>No NPCs configured</gray>",
-          List.of("<gray>Create one with <white>/sx admin npc create</white></gray>")));
-    }
-    view.set(view.size() - 9, support.backButton(() -> menus.openMain(player)));
+    MenuView view = PaginatedScreen.<NpcDefinition>of("<gold><bold>Lobby NPCs</bold></gold>")
+        .background(MenuArt.BG_ADMIN)
+        .items(definitions)
+        .page(page)
+        .emptyIndicator(MenuButton.label(ItemKey.minecraft("paper"), "<gray><bold>No lobby NPCs configured</bold></gray>",
+            List.of("<gray>Click <green>'+ Create NPC Here'</green> below</gray>")))
+        .itemMapper(npc -> {
+          UUID skinOwner = onlinePlayerIdByName(npc.skin());
+          String title = "<gold><bold>" + MenuSupport.escape(npc.id()) + "</bold></gold>"
+              + (npc.name().isBlank() ? "" : " <gray>(" + MenuSupport.escape(npc.name()) + ")</gray>");
+          List<String> lore = List.of(
+              "<gray>World: <white>" + npc.world() + "</white></gray>",
+              "<gray>Position: <white>" + (int) npc.x() + ", " + (int) npc.y() + ", " + (int) npc.z() + "</white></gray>",
+              npc.minigameMode().isBlank() ? "<dark_gray>No minigame</dark_gray>" : "<aqua>Mode: " + npc.minigameMode() + "</aqua>",
+              "<yellow>Click to edit NPC</yellow>");
+          return skinOwner == null
+              ? MenuButton.of(ItemKey.minecraft("armor_stand"), title, lore, ctx -> menus.openNpcEditor(ctx.player(), npc.id()))
+              : MenuButton.head(skinOwner, title, lore, ctx -> menus.openNpcEditor(ctx.player(), npc.id()));
+        })
+        .onPageChange(p -> openNpcList(player, p))
+        .back(support.back(ctx -> menus.openAdminSettings(ctx.player())))
+        .primaryAction(MenuButton.of(ItemKey.minecraft("player_head"), "<green><bold>+ Create NPC Here</bold></green>",
+            List.of("<gray>Spawns a new NPC at your coordinates</gray>"),
+            ctx -> createNpcHere(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_NPC_CREATE)))
+        .build();
+
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.ADMIN_SETTINGS);
     support.open(player, view);
   }
 
-  /** The per-NPC editor: skin, minigame mode, look-at toggle, hologram status, move-here, delete. */
   void openNpcEditor(PlayerAdapter player, String npcId) {
     NpcManager npcManager = support.npcManager;
-    NpcDefinition definition = npcManager.get(npcId);
+    if (!player.hasPermission(CoreCommandService.ADMIN_PERMISSION)) {
+      player.sendActionBar("<red>You don't have permission for that.</red>");
+      return;
+    }
+    NpcDefinition definition = npcManager != null ? npcManager.get(npcId) : null;
     if (definition == null) {
-      player.sendActionBar("<red>That NPC no longer exists.</red>");
+      player.sendActionBar("<red>NPC '" + npcId + "' no longer exists.</red>");
       menus.openNpcList(player);
       return;
     }
-    MenuView view = new MenuView("<gold><bold>Edit NPC</bold></gold> <gray>" + MenuSupport.escape(definition.id()) + "</gray>", 3)
+
+    MenuView view = new MenuView("<gold><bold>Edit NPC · " + MenuSupport.escape(definition.id()) + "</bold></gold>", ChestLayout.ROWS)
+        .plainRows(ChestLayout.ROWS)
         .background(MenuArt.BG_ADMIN);
 
-    String skinLabel = definition.skin().isBlank() ? "default" : MenuSupport.escape(definition.skin());
-    view.set(10, MenuButton.of(ItemKey.minecraft("player_head"), "<aqua><bold>Skin</bold></aqua>",
-        List.of("<gray>Current: <white>" + skinLabel + "</white></gray>",
-            "<yellow>Click to choose an online player</yellow>"),
-        ctx -> menus.openNpcSkinPicker(ctx.player(), definition.id())));
+    ChestLayout.fillSeparators(view);
 
-    String modeLabel = definition.minigameMode().isBlank() ? "Manual (click command)" : MenuSupport.escape(definition.minigameMode());
-    view.set(12, MenuButton.of(support.icon(definition.minigameMode()), "<green><bold>Minigame Mode</bold></green>",
-        List.of("<gray>Current: <white>" + modeLabel + "</white></gray>",
-            "<yellow>Click to choose a minigame</yellow>"),
-        ctx -> menus.openNpcModePicker(ctx.player(), definition.id())).withModel(MenuArt.modeModel(definition.minigameMode())));
+    // Sidebar: Unified global navigation rail with ADMIN_SETTINGS marked active
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.ADMIN_SETTINGS);
 
-    boolean follow = definition.followPlayerHead();
-    view.set(14, MenuButton.of(ItemKey.minecraft(follow ? "ender_eye" : "ender_pearl"),
-        "<light_purple><bold>Look at Players</bold></light_purple>",
-        List.of("<gray>Currently: " + (follow ? "<green>on</green>" : "<red>off</red>") + "</gray>",
-            "<yellow>Click to toggle</yellow>"),
-        ctx -> saveNpcFromMenu(ctx.player(), withFollow(definition, !follow), () -> menus.openNpcEditor(ctx.player(), definition.id()))));
+    // Content: Row 0 Header Plaque (slot 5)
+    view.set(5, MenuButton.label(ItemKey.minecraft("armor_stand"),
+        "<gold><bold>NPC: " + MenuSupport.escape(definition.id()) + "</bold></gold>",
+        List.of("<gray>World: <white>" + definition.world() + "</white></gray>",
+            "<gray>X: <white>" + (int) definition.x() + "</white> Y: <white>" + (int) definition.y() + "</white> Z: <white>" + (int) definition.z() + "</white></gray>",
+            "<gray>Skin: <white>" + (definition.skin().isBlank() ? "default" : definition.skin()) + "</white></gray>",
+            "<gray>Mode: <white>" + (definition.minigameMode().isBlank() ? "none" : definition.minigameMode()) + "</white></gray>"))
+        .withModel(MenuArt.model(MenuArt.ICON_NPC)));
 
-    view.set(16, MenuButton.label(ItemKey.minecraft("oak_sign"), "<gold><bold>Hologram</bold></gold>",
-        hologramStatusLore(definition)));
+    // Content: Row 1 (Visual & Mode Controls - slots 12, 14, 16)
+    UUID skinOwner = onlinePlayerIdByName(definition.skin());
+    MenuButton skinTile = skinOwner == null
+        ? MenuButton.of(ItemKey.minecraft("player_head"),
+            "<aqua><bold>Skin: " + (definition.skin().isBlank() ? "(default)" : definition.skin()) + "</bold></aqua>",
+            List.of("<gray>Click to pick an online player's skin</gray>"),
+            ctx -> menus.openNpcSkinPicker(ctx.player(), definition.id()))
+        : MenuButton.head(skinOwner,
+            "<aqua><bold>Skin: " + definition.skin() + "</bold></aqua>",
+            List.of("<gray>Click to pick a different skin</gray>"),
+            ctx -> menus.openNpcSkinPicker(ctx.player(), definition.id()));
+    view.set(12, skinTile);
 
-    view.set(20, MenuButton.of(ItemKey.minecraft("compass"), "<aqua><bold>Move NPC Here</bold></aqua>",
-        List.of("<gray>Teleports the NPC to your position</gray>"),
+    String mode = definition.minigameMode();
+    GameModeDescriptor descriptor = support.descriptorOf(mode);
+    ItemKey modeIcon = descriptor != null ? support.icon(mode) : ItemKey.minecraft("diamond_sword");
+    String modeLabel = descriptor != null ? descriptor.displayName() : (mode.isBlank() ? "(none)" : mode);
+    view.set(14, MenuButton.of(modeIcon,
+        "<green><bold>Mode: " + modeLabel + "</bold></green>",
+        List.of("<gray>Click to pick the minigame</gray>", "<gray>this NPC opens on click</gray>"),
+        ctx -> menus.openNpcModePicker(ctx.player(), definition.id())));
+
+    view.set(16, MenuButton.of(
+        definition.followPlayerHead() ? ItemKey.minecraft("ender_eye") : ItemKey.minecraft("ender_pearl"),
+        "<yellow><bold>Look at Players: " + (definition.followPlayerHead() ? "<green>ON</green>" : "<red>OFF</red>") + "</bold></yellow>",
+        List.of("<gray>Click to toggle head rotation</gray>"),
         ctx -> {
-          PlayerAdapter clicker = ctx.player();
-          WorldPosition position = clicker.position();
-          if (position == null) {
-            clicker.sendActionBar("<red>Could not read your position.</red>");
+          NpcDefinition updated = new NpcDefinition(definition.id(), definition.world(), definition.x(),
+              definition.y(), definition.z(), definition.yaw(), definition.pitch(), definition.skin(),
+              definition.name(), definition.clickCommand(), !definition.followPlayerHead(),
+              definition.hologram(), definition.minigameMode());
+          saveNpcFromMenu(ctx.player(), updated, () -> menus.openNpcEditor(ctx.player(), definition.id()));
+        }));
+
+    // Content: Row 2 (Position & Display Controls - slots 22, 24)
+    view.set(22, MenuButton.of(ItemKey.minecraft("name_tag"),
+        "<light_purple><bold>Hologram: " + (definition.hologram().isEmpty() ? "<red>OFF</red>" : "<green>ON</green>") + "</bold></light_purple>",
+        List.of("<gray>Click to toggle title floating text</gray>"),
+        ctx -> {
+          List<String> holo = definition.hologram().isEmpty()
+              ? List.of("<yellow><bold>" + (descriptor != null ? descriptor.displayName() : definition.id()) + "</bold></yellow>", "<gray>Click to Play</gray>")
+              : List.of();
+          NpcDefinition updated = new NpcDefinition(definition.id(), definition.world(), definition.x(),
+              definition.y(), definition.z(), definition.yaw(), definition.pitch(), definition.skin(),
+              definition.name(), definition.clickCommand(), definition.followPlayerHead(),
+              holo, definition.minigameMode());
+          saveNpcFromMenu(ctx.player(), updated, () -> menus.openNpcEditor(ctx.player(), definition.id()));
+        }));
+
+    view.set(24, MenuButton.of(ItemKey.minecraft("compass"),
+        "<gold><bold>Move NPC Here</bold></gold>",
+        List.of("<gray>Relocates the NPC to your exact position</gray>", "<yellow>Click to move</yellow>"),
+        ctx -> {
+          WorldPosition pos = ctx.player().position();
+          if (pos == null) {
+            ctx.player().sendActionBar("<red>Could not read your position.</red>");
             return;
           }
-          NpcDefinition moved = new NpcDefinition(definition.id(), position.worldName(), position.coordinateX(),
-              position.coordinateY(), position.coordinateZ(), position.yaw(), position.pitch(), definition.skin(),
-              definition.name(), definition.clickCommand(), definition.followPlayerHead(), definition.hologram(),
-              definition.minigameMode());
-          saveNpcFromMenu(clicker, moved, () -> {
-            clicker.sendActionBar("<green>Moved NPC <white>" + MenuSupport.escape(definition.id()) + "</white> here.</green>");
-            menus.openNpcEditor(clicker, definition.id());
+          NpcDefinition moved = new NpcDefinition(definition.id(), pos.worldName(), pos.coordinateX(), pos.coordinateY(), pos.coordinateZ(),
+              pos.yaw(), pos.pitch(), definition.skin(), definition.name(), definition.clickCommand(),
+              definition.followPlayerHead(), definition.hologram(), definition.minigameMode());
+          saveNpcFromMenu(ctx.player(), moved, () -> {
+            ctx.player().sendActionBar("<green>Moved NPC '" + definition.id() + "' to your position.</green>");
+            menus.openNpcEditor(ctx.player(), definition.id());
           });
         }));
 
-    view.set(24, support.confirmButton(player, ItemKey.minecraft("tnt"), MenuArt.model(MenuArt.ICON_DELETE), "npc-delete:" + definition.id(),
-        "<red><bold>Delete NPC</bold></red>", List.of("<gray>Tap to delete this NPC</gray>"),
-        "<red><bold>Tap again to delete!</bold></red>", List.of("<red>This cannot be undone</red>"),
+    // Bottom Navigation: Slot 47 Back, Slot 53 Delete
+    view.set(ChestLayout.SLOT_BACK, support.back(ctx -> {
+      support.clearConfirm(ctx.player().uniqueId());
+      menus.openNpcList(ctx.player());
+    }));
+
+    view.set(ChestLayout.SLOT_PRIMARY, support.confirmButton(player, ItemKey.minecraft("barrier"), MenuArt.model(MenuArt.ICON_DECLINE),
+        "npc-delete:" + definition.id(),
+        "<red><bold>Delete NPC</bold></red>",
+        List.of("<gray>Permanently removes this NPC</gray>", "<yellow>Tap, then tap again to confirm</yellow>"),
+        "<red><bold>⚠ Tap again to delete</bold></red>",
+        List.of("<red>This deletes the NPC from the world!</red>", "<yellow>Tap once more to delete</yellow>"),
         ctx -> {
-          npcManager.remove(definition.id());
-          ctx.player().sendActionBar("<yellow>Deleted NPC <white>" + MenuSupport.escape(definition.id()) + "</white>.</yellow>");
+          support.clearConfirm(ctx.player().uniqueId());
+          if (npcManager != null) {
+            npcManager.remove(definition.id());
+          }
+          ctx.player().sendActionBar("<yellow>Deleted NPC '" + definition.id() + "'.</yellow>");
           menus.openNpcList(ctx.player());
         },
         viewer -> menus.openNpcEditor(viewer, definition.id())));
 
-    view.set(view.size() - 9, support.back(ctx -> menus.openNpcList(ctx.player())));
     support.open(player, view);
   }
 
-  /** Picks which minigame an NPC queues for; "Manual / None" falls back to the NPC's click command. */
   void openNpcModePicker(PlayerAdapter player, String npcId) {
+    openNpcModePicker(player, npcId, 0);
+  }
+
+  void openNpcModePicker(PlayerAdapter player, String npcId, int page) {
     NpcManager npcManager = support.npcManager;
     GameManager gameManager = support.gameManager;
-    NpcDefinition definition = npcManager.get(npcId);
+    if (!player.hasPermission(CoreCommandService.ADMIN_PERMISSION)) {
+      player.sendActionBar("<red>You don't have permission for that.</red>");
+      return;
+    }
+    NpcDefinition definition = npcManager != null ? npcManager.get(npcId) : null;
     if (definition == null) {
-      player.sendActionBar("<red>That NPC no longer exists.</red>");
       menus.openNpcList(player);
       return;
     }
-    MenuView view = new MenuView("<green><bold>Choose Minigame</bold></green>", 6).background(MenuArt.BG_ADMIN);
-    int slot = 0;
-    boolean manual = definition.minigameMode().isBlank();
-    view.set(slot++, MenuButton.of(ItemKey.minecraft("barrier"),
-        "<white><bold>Manual / None</bold></white>" + (manual ? " <green>✔</green>" : ""),
-        List.of("<gray>Use the NPC's click command instead</gray>"),
-        ctx -> saveNpcFromMenu(ctx.player(), withMode(definition, ""), () -> menus.openNpcEditor(ctx.player(), definition.id()))));
+    String current = definition.minigameMode();
+
+    List<GameModeDescriptor> descriptors = new ArrayList<>();
     for (GameModeDescriptor descriptor : gameManager.descriptors()) {
-      if (!CoreGameRegistryInitializer.CATEGORY_MINIGAMES.equals(descriptor.category())) {
-        continue;
-      }
-      if (slot >= 45) {
-        break;
-      }
-      boolean active = descriptor.modeId().equalsIgnoreCase(definition.minigameMode());
-      view.set(slot++, MenuButton.of(support.icon(descriptor.modeId()),
-          "<white><bold>" + MenuSupport.escape(descriptor.displayName()) + "</bold></white>" + (active ? " <green>✔</green>" : ""),
-          List.of("<gray>Click queues players for <white>" + MenuSupport.escape(descriptor.modeId()) + "</white></gray>"),
-          ctx -> saveNpcFromMenu(ctx.player(), withMode(definition, descriptor.modeId()),
-              () -> menus.openNpcEditor(ctx.player(), definition.id()))).withModel(MenuArt.modeModel(descriptor.modeId())));
+      descriptors.add(descriptor);
     }
-    view.set(view.size() - 9, support.back(ctx -> menus.openNpcEditor(ctx.player(), definition.id())));
+
+    MenuView view = PaginatedScreen.<GameModeDescriptor>of("<green><bold>Choose Minigame</bold></green>")
+        .background(MenuArt.BG_ADMIN)
+        .items(descriptors)
+        .page(page)
+        .itemMapper(descriptor -> {
+          boolean selected = descriptor.modeId().equals(current);
+          return MenuButton.of(support.icon(descriptor.modeId()),
+              (selected ? "<green>✔ " : "<white>") + descriptor.displayName() + (selected ? "</green>" : "</white>"),
+              List.of("<gray>Min players: <white>" + descriptor.minPlayers() + "</white></gray>",
+                  selected ? "<green>Currently selected</green>" : "<yellow>Click to select</yellow>"),
+              ctx -> {
+                NpcDefinition updated = withMode(definition, descriptor.modeId());
+                saveNpcFromMenu(ctx.player(), updated, () -> menus.openNpcEditor(ctx.player(), npcId));
+              });
+        })
+        .onPageChange(p -> openNpcModePicker(player, npcId, p))
+        .back(support.back(ctx -> menus.openNpcEditor(ctx.player(), npcId)))
+        .primaryAction(MenuButton.of(ItemKey.minecraft("barrier"), "<red>Clear Minigame</red>",
+            List.of("<gray>Disconnects minigame click actions</gray>"),
+            ctx -> {
+              NpcDefinition updated = withMode(definition, "");
+              saveNpcFromMenu(ctx.player(), updated, () -> menus.openNpcEditor(ctx.player(), npcId));
+            }))
+        .build();
+
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.ADMIN_SETTINGS);
     support.open(player, view);
   }
 
-  /** Reuses the online-player picker to set an NPC's skin to a player's name (resolved via SkinsRestorer). */
   void openNpcSkinPicker(PlayerAdapter player, String npcId) {
+    openNpcSkinPicker(player, npcId, 0);
+  }
+
+  void openNpcSkinPicker(PlayerAdapter player, String npcId, int page) {
+    if (!player.hasPermission(CoreCommandService.ADMIN_PERMISSION)) {
+      player.sendActionBar("<red>You don't have permission for that.</red>");
+      return;
+    }
     NpcManager npcManager = support.npcManager;
-    NpcDefinition definition = npcManager.get(npcId);
+    NpcDefinition definition = npcManager != null ? npcManager.get(npcId) : null;
     if (definition == null) {
-      player.sendActionBar("<red>That NPC no longer exists.</red>");
       menus.openNpcList(player);
       return;
     }
-    support.openPlayerPicker(player, "<aqua><bold>Choose Skin</bold></aqua>",
+    support.openPlayerPicker(player, "<aqua><bold>Choose Skin · " + MenuSupport.escape(npcId) + "</bold></aqua>",
+        page,
         candidate -> true,
-        candidate -> saveNpcFromMenu(player, withSkin(definition, candidate.name()),
-            () -> menus.openNpcEditor(player, definition.id())),
-        support.back(ctx -> menus.openNpcEditor(ctx.player(), definition.id())));
+        target -> {
+          NpcDefinition updated = withSkin(definition, target.name());
+          saveNpcFromMenu(player, updated, () -> {
+            player.sendActionBar("<green>Applied " + MenuSupport.escape(target.name()) + "'s skin to '" + npcId + "'.</green>");
+            menus.openNpcEditor(player, npcId);
+          });
+        },
+        support.back(ctx -> menus.openNpcEditor(ctx.player(), npcId)));
   }
 
-  private NpcDefinition withFollow(NpcDefinition d, boolean follow) {
-    return new NpcDefinition(d.id(), d.world(), d.x(), d.y(), d.z(), d.yaw(), d.pitch(), d.skin(), d.name(),
-        d.clickCommand(), follow, d.hologram(), d.minigameMode());
+  private void createNpcHere(PlayerAdapter player) {
+    NpcManager npcManager = support.npcManager;
+    WorldPosition pos = player.position();
+    if (pos == null) {
+      player.sendActionBar("<red>Could not read your position.</red>");
+      return;
+    }
+    String id = "npc_" + System.currentTimeMillis() % 100_000;
+    NpcDefinition created = new NpcDefinition(id, pos.worldName(), pos.coordinateX(), pos.coordinateY(), pos.coordinateZ(), pos.yaw(),
+        pos.pitch(), player.name(), id, "", true, List.of(), "");
+    try {
+      if (npcManager != null) {
+        npcManager.save(created);
+      }
+      player.sendActionBar("<green>Spawned NPC '" + id + "'.</green>");
+      menus.openNpcEditor(player, id);
+    } catch (java.io.IOException exception) {
+      player.sendActionBar("<red>Could not create NPC: " + exception.getMessage() + "</red>");
+    }
   }
 
   private NpcDefinition withMode(NpcDefinition d, String mode) {
@@ -292,6 +398,10 @@ final class AdminMenu {
 
   private void saveNpcFromMenu(PlayerAdapter player, NpcDefinition definition, Runnable after) {
     NpcManager npcManager = support.npcManager;
+    if (npcManager == null) {
+      after.run();
+      return;
+    }
     try {
       npcManager.save(definition);
       after.run();
@@ -311,17 +421,5 @@ final class AdminMenu {
       }
     }
     return null;
-  }
-
-  /** Mirrors {@code NpcManager.effectiveHologram} priority (manual &gt; mode &gt; none) for the editor label. */
-  private List<String> hologramStatusLore(NpcDefinition definition) {
-    if (!definition.hologram().isEmpty()) {
-      return List.of("<gray>" + definition.hologram().size() + " manual line(s)</gray>",
-          "<gray>Overrides the mode hologram</gray>");
-    }
-    if (!definition.minigameMode().isBlank()) {
-      return List.of("<gray>Auto from mode</gray>", "<gray>Shows live player &amp; queue counts</gray>");
-    }
-    return List.of("<gray>None</gray>");
   }
 }

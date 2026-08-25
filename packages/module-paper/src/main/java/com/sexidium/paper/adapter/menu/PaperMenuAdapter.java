@@ -118,25 +118,16 @@ public final class PaperMenuAdapter implements MenuAdapter, Listener {
     }
 
     boolean loaded = packLoaded.test(handle.getUniqueId());
-    // A baked-overlay view (the hub) hides item icons and routes clicks via the tile groups. It is keyed on
-    // the OVERLAY glyph (the transparent cards), not the background (which is the chest frame, a BG_* marker).
-    boolean screenLoaded = loaded && view.screenArt() != null && MenuArt.glyph(view.overlayArt()) != null;
-    Map<Integer, MenuButton> routedButtons = screenLoaded ? screenButtons(view) : view.buttons();
+    Map<Integer, MenuButton> routedButtons = view.buttons();
     SexidiumMenuHolder holder = new SexidiumMenuHolder(view, routedButtons);
     Component title = PaperMenuArt.title(view, loaded);
-    // Baked-art viewers always get the full six-row window the art is drawn for; a plain viewer gets the
-    // view's plain-mode size (defaults to size(), but the hub asks for a compact three rows). The buttons
-    // that layoutCentered placed into the first content row fall inside the smaller window unchanged.
-    int inventorySize = screenLoaded ? 6 * 9 : view.plainSize();
+    int inventorySize = view.size();
     Inventory inventory = Bukkit.createInventory(holder, inventorySize, title);
     holder.attach(inventory);
 
     for (Map.Entry<Integer, MenuButton> entry : routedButtons.entrySet()) {
       int slot = entry.getKey();
       if (slot < 0 || slot >= inventorySize) {
-        continue;
-      }
-      if (screenLoaded && entry.getValue().headOwner() == null) {
         continue;
       }
       inventory.setItem(slot, toItemStack(entry.getValue(), loaded));

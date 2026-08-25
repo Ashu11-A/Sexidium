@@ -338,7 +338,7 @@ class ExperienceBackupManagerDesignTest {
     // skips copies for the FRIENDS half of the browser, so the only people it reaches are strangers,
     // who see it under the same icon and (for copies older than the " (backup)" suffix) the same name
     // as the world it copies.
-    int lostBranch = source.indexOf("view.set(12, lockedButton(ItemKey.minecraft(\"gray_dye\"), \"Visibility\"");
+    int lostBranch = source.indexOf("lockedButton(ItemKey.minecraft(\"gray_dye\"), \"Visibility\"");
     assertTrue(lostBranch > 0, "the lost world's visibility tile is the anchor for this one");
     int backupBranch = source.indexOf("} else if (isBackup) {", lostBranch);
     int toggle = source.indexOf("Click to toggle visibility", lostBranch);
@@ -394,7 +394,7 @@ class ExperienceBackupManagerDesignTest {
   @DisplayName("copies past the seven drawn slots are counted, not silently dropped off the screen")
   void copiesBeyondTheDrawnSlotsAreAccountedFor() {
     String source = source();
-    assertTrue(source.contains("int[] rowSlots = {10, 11, 12, 13, 14, 15, 16}"),
+    assertTrue(source.contains("int[] rowSlots = {11, 12, 13, 14, 15, 16, 17}"),
         "the copy rows have exactly seven slots on a three-row view");
     assertTrue(source.contains("backups.size() > rowSlots.length"),
         "max-backups-per-experience is configurable and defaults to 3; raise it above seven and the"

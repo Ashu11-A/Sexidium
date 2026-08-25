@@ -18,16 +18,15 @@ import java.util.UUID;
  * <p>The menus cover the whole lobby experience: pick a minigame, build a composable experience
  * experience (multi-select challenges, always survival), manage your own experiences (enter / make
  * public / delete), browse and request to join other players' public experiences, and see friends and
- * party. See {@code docs/ui-and-localization.md} for how to add buttons and icons.</p>
+ * party. See {@code docs/interface/ui-and-localization.md} for how to add buttons and icons.</p>
  *
  * <p>This class is the stable public facade. The screens themselves are split, by responsibility,
- * across {@link HubMenu}, {@link MinigameMenu}, {@link ExperienceMenu}, {@link LobbyMenu},
+ * across {@link MinigameMenu}, {@link ExperienceMenu}, {@link LobbyMenu},
  * {@link SocialMenu} and {@link AdminMenu}, all composing the shared {@link MenuSupport}. Every public
  * method here delegates straight through so adapters, the command service and tests compile unchanged.</p>
  */
 public final class MenuService {
   private final MenuSupport support;
-  private final HubMenu hub;
   private final MinigameMenu minigames;
   private final ExperienceMenu experiences;
   private final LobbyMenu lobby;
@@ -43,13 +42,12 @@ public final class MenuService {
     this.lobby = new LobbyMenu(support, this);
     this.social = new SocialMenu(support, this);
     this.admin = new AdminMenu(support, this);
-    this.hub = new HubMenu(support, this);
   }
 
-  // ----- hub ------------------------------------------------------------------------------------
+  // ----- default main menu ----------------------------------------------------------------------
 
   public void openMain(PlayerAdapter player) {
-    hub.openMain(player);
+    minigames.openCategory(player, "minigames", "<aqua><bold>Minigames</bold></aqua>");
   }
 
   // ----- minigames ------------------------------------------------------------------------------
@@ -136,13 +134,25 @@ public final class MenuService {
     lobby.openInviteFromFriends(player);
   }
 
+  public void openInviteFromFriends(PlayerAdapter player, int page) {
+    lobby.openInviteFromFriends(player, page);
+  }
+
   public void openLobbyBrowser(PlayerAdapter player) {
     lobby.openLobbyBrowser(player);
+  }
+
+  public void openLobbyBrowser(PlayerAdapter player, int page) {
+    lobby.openLobbyBrowser(player, page);
   }
 
   /** The Friends roster — see where each friend is and join their world or teleport to them. */
   public void openFriendsWarp(PlayerAdapter player) {
     lobby.openFriendsWarp(player);
+  }
+
+  public void openFriendsWarp(PlayerAdapter player, int page) {
+    lobby.openFriendsWarp(player, page);
   }
 
   /** One joinable-lobby row, shared by the lobby browser and the per-mode minigame detail screen. */
@@ -156,12 +166,24 @@ public final class MenuService {
     social.openFriends(player);
   }
 
+  public void openFriends(PlayerAdapter player, int page) {
+    social.openFriends(player, page);
+  }
+
   public void openAddFriend(PlayerAdapter player) {
     social.openAddFriend(player);
   }
 
+  public void openAddFriend(PlayerAdapter player, int page) {
+    social.openAddFriend(player, page);
+  }
+
   public void openInvites(PlayerAdapter player) {
     social.openInvites(player);
+  }
+
+  public void openInvites(PlayerAdapter player, int page) {
+    social.openInvites(player, page);
   }
 
   public void openFriendActions(PlayerAdapter player, UUID friendId, String friendName) {
@@ -182,6 +204,10 @@ public final class MenuService {
     admin.openNpcList(player);
   }
 
+  public void openNpcList(PlayerAdapter player, int page) {
+    admin.openNpcList(player, page);
+  }
+
   public void openNpcEditor(PlayerAdapter player, String npcId) {
     admin.openNpcEditor(player, npcId);
   }
@@ -190,8 +216,16 @@ public final class MenuService {
     admin.openNpcModePicker(player, npcId);
   }
 
+  public void openNpcModePicker(PlayerAdapter player, String npcId, int page) {
+    admin.openNpcModePicker(player, npcId, page);
+  }
+
   public void openNpcSkinPicker(PlayerAdapter player, String npcId) {
     admin.openNpcSkinPicker(player, npcId);
+  }
+
+  public void openNpcSkinPicker(PlayerAdapter player, String npcId, int page) {
+    admin.openNpcSkinPicker(player, npcId, page);
   }
 
   // ----- teardown -------------------------------------------------------------------------------

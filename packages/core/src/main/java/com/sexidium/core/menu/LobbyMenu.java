@@ -10,6 +10,7 @@ import com.sexidium.core.data.FriendService;
 import com.sexidium.core.world.lobby.Lobby;
 import com.sexidium.core.world.lobby.LobbyManager;
 import com.sexidium.core.world.lobby.LobbyResult;
+import com.sexidium.core.world.lobby.LobbyEnums.LobbyVisibility;
 import com.sexidium.core.platform.PlayerAdapter;
 import com.sexidium.core.platform.ServerAdapter;
 import com.sexidium.core.platform.model.ItemKey;
@@ -58,47 +59,34 @@ final class LobbyMenu {
     ServerAdapter serverAdapter = support.serverAdapter;
     UUID id = player.uniqueId();
     boolean inGroup = lobby != null && lobby.size() > 1;
-    boolean leader = lobby == null || lobby.isLeader(id); // solo players lead themselves
+    boolean leader = lobby == null || lobby.isLeader(id);
     boolean queued = lobby != null && lobby.isQueued();
-    MenuView view = new MenuView(queued
+    String title = queued
         ? "<aqua><bold>Lobby</bold></aqua> <gray>· in queue</gray>"
-        : "<light_purple><bold>Lobby</bold></light_purple>", 4).background(MenuArt.BG_LOBBY);
+        : "<light_purple><bold>Lobby & Party</bold></light_purple>";
 
-    view.set(2, MenuButton.of(ItemKey.minecraft("lime_dye"), "<green><bold>Invite Players</bold></green>",
-        List.of(inGroup && !leader ? "<red>Only the leader can invite</red>" : "<gray>Pick a friend or online player</gray>"),
-        ctx -> {
-          if (inGroup && !leader) {
-            ctx.player().sendActionBar("<red>Only the lobby leader can invite.</red>");
-          } else {
-            menus.openInviteFromFriends(ctx.player());
-          }
-        }).withModel(MenuArt.model(MenuArt.ICON_INVITE)));
-    int pending = support.pendingInviteCount(id);
-    view.set(4, MenuButton.of(ItemKey.minecraft("writable_book"), "<aqua><bold>Invites</bold></aqua>",
-        List.of("<gray>Pending: <white>" + pending + "</white></gray>", "<yellow>Click to review</yellow>"),
-        ctx -> menus.openInvites(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_INVITES)));
-    if (leader) {
-      view.set(6, MenuButton.of(ItemKey.minecraft("diamond_sword"), "<gold><bold>Play Together</bold></gold>",
-          List.of("<gray>Quick-play or host a minigame for your group</gray>"),
-          ctx -> menus.openCategory(ctx.player(), "minigames", "<gold><bold>Play Together</bold></gold>"))
-          .withModel(MenuArt.model(MenuArt.ICON_PLAY_TOGETHER)));
-    }
+    MenuView view = new MenuView(title, ChestLayout.ROWS)
+        .plainRows(ChestLayout.ROWS)
+        .background(MenuArt.BG_LOBBY);
 
-    int slot = 9;
+    fillSeparator(view);
+
+    // Sidebar: Unified global navigation rail with LOBBY_SOCIAL marked active
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.LOBBY_SOCIAL);
+
+    // Content area: group roster (up to 35 slots)
     List<UUID> members = lobby == null ? List.of(id) : lobby.members();
-    for (UUID memberId : members) {
-      if (slot >= 27) {
-        break;
-      }
+    for (int i = 0; i < members.size() && i < ChestLayout.CONTENT_CAPACITY; i++) {
+      UUID memberId = members.get(i);
       boolean memberIsLeader = lobby == null ? memberId.equals(id) : lobby.isLeader(memberId);
       boolean self = memberId.equals(id);
       boolean kickable = leader && inGroup && !self;
       String memberName = support.name(memberId);
       boolean armed = kickable && support.isArmed(id, "kick:" + memberId);
-      String memberTitle = "<white>" + MenuSupport.escape(memberName) + "</white>" + (memberIsLeader ? " <gold>(leader)</gold>" : "");
+      String memberTitle = "<white><bold>" + MenuSupport.escape(memberName) + "</bold></white>" + (memberIsLeader ? " <gold>(leader)</gold>" : "");
       List<String> memberLore = List.of(kickable
           ? (armed ? "<red>⚠ Tap again to kick</red>" : "<yellow>Tap to kick (confirms)</yellow>")
-          : "<gray>Member</gray>");
+          : (self ? "<green>You (Host)</green>" : "<gray>Party Member</gray>"));
       Consumer<MenuContext> onMember = ctx -> {
         if (!kickable) {
           ctx.player().sendActionBar(self ? "<gray>That's you.</gray>" : "<gray>Only the leader can kick members.</gray>");
@@ -113,414 +101,351 @@ final class LobbyMenu {
         } else if (MenuSupport.isTap(ctx)) {
           ctx.player().sendActionBar("<red>Tap again to kick " + MenuSupport.escape(memberName) + ".</red>");
         } else {
-          // confirmStep ignores anything that is not a tap, so a number key or a drop that landed on
-          // this head armed nothing: promising that one more tap kicks would be a lie, and there is no
-          // changed state to redraw the screen for.
           return;
         }
         menus.openLobby(ctx.player());
       };
-      view.set(slot++, memberIsLeader && self
+      MenuButton button = memberIsLeader && self
           ? MenuButton.of(ItemKey.minecraft("golden_helmet"), memberTitle, memberLore, onMember)
-          : MenuButton.head(memberId, memberTitle, memberLore, onMember));
+          : MenuButton.head(memberId, memberTitle, memberLore, onMember);
+      view.set(ChestLayout.contentSlot(i), button);
     }
+
     if (!inGroup) {
-      view.set(31, MenuButton.label(ItemKey.minecraft("paper"), "<gray>Just you for now</gray>",
-          List.of("<gray>Invite friends, or Play Together to quick-play</gray>")));
+      view.set(ChestLayout.contentSlot(17), MenuButton.label(ItemKey.minecraft("paper"),
+          "<gray><bold>Just you in the party</bold></gray>",
+          List.of("<gray>Click <green>'Invite Players'</green> below to invite friends!</gray>")));
     }
 
-    if (queued && lobby != null) {
-      String mode = lobby.modeId();
-      view.set(33, MenuButton.of(ItemKey.minecraft("clock"), "<yellow><bold>In quick-play queue</bold></yellow>",
-          List.of("<gray>Mode: <white>" + mode + "</white></gray>",
-              "<gray>Waiting: <white>" + lobbyManager.queueSize(mode) + "</white></gray>",
-              leader ? "<red>Click to cancel</red>" : "<gray>The leader controls the queue</gray>"),
-          ctx -> {
-            if (lobby.isLeader(ctx.player().uniqueId())) {
-              lobbyManager.dequeue(ctx.player());
-              ctx.player().sendActionBar("<yellow>Left the quick-play queue.</yellow>");
-            }
-            menus.openLobby(ctx.player());
-          }));
-    }
+    // Bottom Navigation:
+    view.set(ChestLayout.SLOT_BACK, support.backButton(() -> menus.openMain(player)));
 
+    // Slot 51: Invite players shortcut
+    view.set(ChestLayout.SLOT_CHAOS, MenuButton.of(ItemKey.minecraft("lime_dye"), "<green><bold>Invite Players</bold></green>",
+        List.of(inGroup && !leader ? "<red>Only the leader can invite</red>" : "<gray>Pick a friend or online player</gray>", "<yellow>Click to open invite picker</yellow>"),
+        ctx -> {
+          if (inGroup && !leader) {
+            ctx.player().sendActionBar("<red>Only the lobby leader can invite.</red>");
+          } else {
+            menus.openInviteFromFriends(ctx.player());
+          }
+        }).withModel(MenuArt.model(MenuArt.ICON_INVITE)));
+
+    // Slot 53: Primary Action (Play Together or Leave Group)
     if (inGroup) {
-      view.set(view.size() - 1, support.confirmButton(player, ItemKey.minecraft("barrier"), MenuArt.model(MenuArt.ICON_LEAVE), "lobby-leave",
+      view.set(ChestLayout.SLOT_PRIMARY, support.confirmButton(player, ItemKey.minecraft("barrier"),
+          MenuArt.model(MenuArt.ICON_LEAVE), "lobby-leave",
           leader ? "<red><bold>Disband Lobby</bold></red>" : "<red><bold>Leave Lobby</bold></red>",
-          List.of("<gray>Tap, then tap again to confirm</gray>"),
-          leader ? "<red><bold>⚠ Tap again to disband</bold></red>" : "<red><bold>⚠ Tap again to leave</bold></red>",
-          List.of("<yellow>Tap once more to confirm</yellow>"),
+          List.of("<gray>" + (leader ? "Disbands the lobby for everyone" : "Leaves your current group") + "</gray>",
+              "<yellow>Tap, then tap again to confirm</yellow>"),
+          "<red><bold>⚠ Tap again to confirm</bold></red>",
+          List.of("<yellow>Tap once more to leave</yellow>"),
           ctx -> {
-            boolean wasLeader = lobbyManager.isLeader(ctx.player().uniqueId());
-            if (wasLeader) {
-              lobbyManager.disband(ctx.player().uniqueId());
-            } else {
+            support.clearConfirm(ctx.player().uniqueId());
+            if (lobbyManager != null) {
               lobbyManager.leave(ctx.player());
             }
-            ctx.player().sendActionBar(wasLeader ? "<yellow>Lobby disbanded.</yellow>" : "<yellow>You left the lobby.</yellow>");
+            ctx.player().sendActionBar("<yellow>Left the lobby.</yellow>");
             menus.openLobby(ctx.player());
           },
-          menus::openLobby));
+          viewer -> menus.openLobby(viewer)));
+    } else {
+      view.set(ChestLayout.SLOT_PRIMARY, MenuButton.of(ItemKey.minecraft("diamond_sword"),
+          "<gold><bold>▶ Play Minigames</bold></gold>",
+          List.of("<gray>Jump straight into quick-match games</gray>", "<yellow>Click to explore modes</yellow>"),
+          ctx -> menus.openCategory(ctx.player(), "minigames", "<aqua><bold>Minigames</bold></aqua>"))
+          .withModel(MenuArt.model(MenuArt.ICON_PLAY_TOGETHER)));
     }
-    view.set(view.size() - 9, support.back(ctx -> {
-          support.clearConfirm(ctx.player().uniqueId());
-          menus.openMain(ctx.player());
-        }));
+
     support.open(player, view);
+    support.trackLive(player, menus::openLobby);
   }
 
   /**
-   * The host CONFIGURED-lobby team-select screen. Shows the (auto-balanced) teams with their colour and a
-   * live player count + member list, lets the host cycle the team size, visibility and start, and anyone leave.
+   * The host team-select / start screen for a CONFIGURED lobby.
    */
   private void openConfiguredLobby(PlayerAdapter player, Lobby lobby) {
     LobbyManager lobbyManager = support.lobbyManager;
-    ServerAdapter serverAdapter = support.serverAdapter;
-    boolean host = lobby.isHost(player.uniqueId());
-    MenuView view = new MenuView("<aqua><bold>Match Lobby</bold></aqua> <gray>" + lobby.modeId() + "</gray>", 4)
+    UUID id = player.uniqueId();
+    boolean isHost = lobby.isHost(id);
+    String modeId = lobby.modeId();
+    GameModeDescriptor descriptor = support.descriptorOf(modeId);
+    String modeName = descriptor != null ? descriptor.displayName() : modeId;
+
+    MenuView view = new MenuView("<aqua><bold>Match Lobby</bold></aqua> <gray>· " + MenuSupport.escape(modeName) + "</gray>",
+        ChestLayout.ROWS)
+        .plainRows(ChestLayout.ROWS)
         .background(MenuArt.BG_LOBBY);
-    List<UUID> members = new ArrayList<>(lobby.members());
-    if (!lobby.teamsEnabled()) {
-      view.set(4, MenuButton.label(ItemKey.minecraft("iron_sword"), "<white><bold>Free for all</bold></white>",
-          List.of("<gray>" + members.size() + " player(s)</gray>")));
-      int slot = 9;
-      for (UUID memberId : members) {
-        if (slot >= 27) {
-          break;
-        }
-        view.set(slot++, MenuButton.headLabel(memberId,
-            "<white>" + MenuSupport.escape(support.name(memberId)) + "</white>", List.of()));
-      }
-    } else {
-      TeamColor[] palette = TeamColor.values();
-      int[] slots = teamSlots(lobby.teamCount());
-      for (int teamIndex = 0; teamIndex < lobby.teamCount() && teamIndex < palette.length; teamIndex++) {
-        TeamColor color = palette[teamIndex];
-        int selectedSize = lobby.selectedTeamSize(teamIndex);
-        Integer viewerTeam = lobby.selectedTeam(player.uniqueId());
-        boolean selectedByViewer = viewerTeam != null && viewerTeam == teamIndex;
-        boolean full = selectedSize >= lobby.teamSize();
-        List<String> lore = new ArrayList<>();
-        lore.add("<gray>" + selectedSize + "/" + lobby.teamSize() + " selected</gray>");
-        lore.add(selectedByViewer
-            ? "<yellow>Click to leave this team</yellow>"
-            : full ? "<red>No open slots</red>" : "<yellow>Click to join this team</yellow>");
-        boolean anyMember = false;
-        for (UUID memberId : members) {
-          Integer memberTeam = lobby.selectedTeam(memberId);
-          if (memberTeam != null && memberTeam == teamIndex) {
-            lore.add("<gray>• </gray><white>" + MenuSupport.escape(support.name(memberId)) + "</white>");
-            anyMember = true;
-          }
-        }
-        if (!anyMember) {
-          lore.add("<dark_gray>No players selected</dark_gray>");
-        }
-        int clickedTeam = teamIndex;
-        TeamColor clickedColor = color;
-        view.set(slots[teamIndex], new MenuButton(ItemKey.minecraft(color.woolItem()), Math.max(1, selectedSize),
-            (selectedByViewer ? "<green><bold>✔ </bold></green>" : "")
-                + color.colorize("<bold>" + color.displayName() + "</bold>")
-                + " <gray>(" + selectedSize + "/" + lobby.teamSize() + ")</gray>", lore,
-            ctx -> {
-              LobbyResult result = lobbyManager.chooseTeam(ctx.player(), clickedTeam);
-              switch (result) {
-                case TEAM_SELECTED -> ctx.player().sendActionBar("<green>Joined "
-                    + clickedColor.colorize(clickedColor.displayName()) + ".</green>");
-                case TEAM_LEFT -> ctx.player().sendActionBar("<yellow>Left "
-                    + clickedColor.colorize(clickedColor.displayName()) + ".</yellow>");
-                case FULL -> ctx.player().sendActionBar("<red>That team is full.</red>");
-                default -> ctx.player().sendActionBar("<red>Could not choose that team.</red>");
-              }
-              menus.openLobby(ctx.player());
-            }, null, null));
-      }
-      int slot = 9;
-      for (UUID memberId : members) {
-        if (lobby.selectedTeam(memberId) != null) {
-          continue;
-        }
-        if (slot >= 27) {
-          break;
-        }
-        view.set(slot++, MenuButton.headLabel(memberId,
-            "<white>" + MenuSupport.escape(support.name(memberId)) + "</white>",
-            List.of("<gray>Not on a team yet</gray>", "<yellow>Choose a wool block above</yellow>")));
-      }
-      if (slot == 9) {
-        view.set(22, MenuButton.label(ItemKey.minecraft("lime_dye"), "<green><bold>All players selected</bold></green>",
-            List.of("<gray>Click your wool block again to leave.</gray>")));
-      }
-    }
-    if (host) {
-      view.set(27, MenuButton.of(ItemKey.minecraft("comparator"),
-          "<yellow><bold>Teams: " + (lobby.teamsEnabled() ? lobby.teamCount() : "FFA") + "</bold></yellow>",
-          List.of("<gray>Click to cycle FFA → 2 → 3 → 4</gray>"),
+
+    fillSeparator(view);
+
+    // Sidebar (Col 0): Host Controls & Information
+    view.set(ChestLayout.sidebarSlot(0), MenuButton.label(support.icon(modeId),
+        "<white><bold>" + MenuSupport.escape(modeName) + "</bold></white>",
+        List.of("<gray>Configured Match Lobby</gray>")));
+
+    if (isHost) {
+      int teamCount = lobby.teamCount();
+      view.set(ChestLayout.sidebarSlot(1), MenuButton.of(ItemKey.minecraft("white_wool"),
+          "<white>Teams: <gold><bold>" + (lobby.teamsEnabled() ? teamCount + " teams" : "FFA (no teams)") + "</bold></gold></white>",
+          List.of("<gray>Click to cycle team count</gray>"),
           ctx -> {
-            int next = !lobby.teamsEnabled() ? 2 : (lobby.teamCount() >= Lobby.MAX_TEAMS ? 0 : lobby.teamCount() + 1);
-            lobbyManager.setTeamCount(ctx.player(), next);
+            int next = !lobby.teamsEnabled() ? 2 : (teamCount >= 4 ? 0 : teamCount + 1);
+            lobby.setTeamCount(next);
             menus.openLobby(ctx.player());
           }).withModel(MenuArt.model(MenuArt.ICON_TEAMS)));
-      if (lobby.teamsEnabled()) {
-        view.set(28, MenuButton.of(ItemKey.minecraft("comparator"),
-            "<yellow><bold>Players per team: " + lobby.teamSize() + "</bold></yellow>",
-            List.of("<gray>Click to cycle 1 → 8</gray>",
-                "<gray>Capacity: " + (lobby.teamCount() * lobby.teamSize()) + "</gray>"),
+
+      view.set(ChestLayout.sidebarSlot(2), MenuButton.of(ItemKey.minecraft("oak_sign"),
+          "<white>Lobby: <gold><bold>" + (lobby.isOpen() ? "Public" : "Invite-only") + "</bold></gold></white>",
+          List.of("<gray>Click to toggle visibility</gray>"),
+          ctx -> {
+            lobby.setVisibility(lobby.isOpen() ? LobbyVisibility.INVITE_ONLY : LobbyVisibility.PUBLIC);
+            menus.openLobby(ctx.player());
+          }).withModel(MenuArt.model(lobby.isOpen() ? MenuArt.ICON_PUBLIC : MenuArt.ICON_INVITE)));
+    } else {
+      view.set(ChestLayout.sidebarSlot(1), MenuButton.label(ItemKey.minecraft("white_wool"),
+          "<white>Teams: <gold><bold>" + (lobby.teamsEnabled() ? lobby.teamCount() + " teams" : "FFA") + "</bold></gold></white>",
+          List.of("<gray>The host controls teams</gray>")));
+    }
+
+    // Content area: Team Wool selectors on Row 0 (Content Slots 1..5)
+    if (lobby.teamsEnabled()) {
+      int teamCount = lobby.teamCount();
+      int[] teamSlots = teamSlots(teamCount);
+      for (int i = 0; i < teamCount && i < teamSlots.length; i++) {
+        TeamColor color = TeamColor.values()[i % TeamColor.values().length];
+        ItemKey wool = ItemKey.minecraft(color.name().toLowerCase(java.util.Locale.ROOT) + "_wool");
+        Integer myTeam = lobby.selectedTeam(id);
+        boolean isMyTeam = myTeam != null && myTeam == i;
+        int teamIndex = i;
+        int slot = ChestLayout.contentSlot(teamSlots[i]);
+        view.set(slot, MenuButton.of(wool,
+            "<" + color.name().toLowerCase(java.util.Locale.ROOT) + "><bold>" + color.displayName() + " Team"
+                + (isMyTeam ? " ✔" : "") + "</bold></" + color.name().toLowerCase(java.util.Locale.ROOT) + ">",
+            List.of("<gray>Click to pick this team</gray>"),
             ctx -> {
-              int next = lobby.teamSize() >= 8 ? 1 : lobby.teamSize() + 1;
-              lobbyManager.setTeamSize(ctx.player(), next);
+              lobby.selectTeam(ctx.player().uniqueId(), teamIndex);
               menus.openLobby(ctx.player());
-            }).withModel(MenuArt.model(MenuArt.ICON_TEAMS)));
+            }));
       }
-      view.set(29, MenuButton.of(MenuSupport.visibilityIcon(lobby.visibility()), MenuSupport.visibilityTitle(lobby.visibility()),
-          List.of(MenuSupport.visibilityHint(lobby.visibility()), "<yellow>Click to cycle</yellow>"),
-          ctx -> {
-            lobbyManager.setVisibility(ctx.player(), MenuSupport.nextVisibility(lobby.visibility()));
-            menus.openLobby(ctx.player());
-          }).withModel(MenuArt.model(MenuArt.ICON_VISIBILITY)));
-      view.set(30, MenuButton.of(ItemKey.minecraft("emerald"),
-          "<yellow><bold>Min players: " + lobby.minPlayers() + "</bold></yellow>",
-          List.of("<gray>Click to cycle 2 → 3 → 4</gray>"),
-          ctx -> {
-            // Floor at 2: a minigame match always needs an opponent, so the host can never drop below it.
-            int next = lobby.minPlayers() >= 4 ? 2 : Math.max(2, lobby.minPlayers() + 1);
-            lobbyManager.setMinPlayers(ctx.player(), next);
-            menus.openLobby(ctx.player());
-          }).withModel(MenuArt.model(MenuArt.ICON_MIN_PLAYERS)));
-      view.set(31, MenuButton.of(ItemKey.minecraft("player_head"), "<aqua><bold>Invite players</bold></aqua>",
-          List.of("<gray>Invite players from the lobby</gray>"),
-          ctx -> menus.openInviteFromFriends(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_INVITE)));
-      List<String> startLore = new ArrayList<>();
-      int requiredPlayers = lobby.requiredPlayersForStart();
-      startLore.add("<gray>" + members.size() + (lobby.teamsEnabled() ? "/" + lobby.capacity() : "") + " player(s)</gray>");
-      if (members.size() < requiredPlayers) {
-        startLore.add("<red>Need " + requiredPlayers + " players</red>");
-      } else if (lobby.teamsEnabled() && members.size() > lobby.capacity()) {
-        startLore.add("<red>Too many players for the team slots</red>");
-      } else {
-        if (lobby.teamsEnabled() && !lobby.unselectedMembers().isEmpty()) {
-          startLore.add("<yellow>Unpicked players will be assigned randomly</yellow>");
-        }
-        startLore.add("<yellow>Click to begin</yellow>");
+    }
+
+    // Content: Roster member heads (Rows 2–4: Content Slots 14..34)
+    List<UUID> members = lobby.members();
+    for (int i = 0; i < members.size() && i < 21; i++) {
+      UUID memberId = members.get(i);
+      Integer teamIdx = lobby.selectedTeam(memberId);
+      TeamColor color = teamIdx != null && teamIdx >= 0 && teamIdx < TeamColor.values().length
+          ? TeamColor.values()[teamIdx] : null;
+      String colorTag = color != null ? color.name().toLowerCase(java.util.Locale.ROOT) : "white";
+      String memberTitle = "<" + colorTag + ">" + MenuSupport.escape(support.name(memberId)) + "</" + colorTag + ">";
+      view.set(ChestLayout.contentSlot(14 + i), MenuButton.head(memberId, memberTitle, List.of(), null));
+    }
+
+    // Bottom Navigation
+    view.set(ChestLayout.SLOT_BACK, support.back(ctx -> {
+      if (lobbyManager != null) {
+        lobbyManager.leave(ctx.player());
       }
-      view.set(33, MenuButton.of(ItemKey.minecraft("lime_concrete"),
-          "<green><bold>Start match</bold></green>", startLore,
+      menus.openCategory(ctx.player(), "minigames", "<aqua><bold>Minigames</bold></aqua>");
+    }));
+
+    view.set(ChestLayout.SLOT_CHAOS, MenuButton.of(ItemKey.minecraft("lime_dye"), "<green><bold>Invite Players</bold></green>",
+        List.of("<gray>Invite online players to match</gray>"),
+        ctx -> menus.openInviteFromFriends(ctx.player())).withModel(MenuArt.model(MenuArt.ICON_INVITE)));
+
+    if (isHost) {
+      view.set(ChestLayout.SLOT_PRIMARY, MenuButton.of(ItemKey.minecraft("lime_concrete"),
+          "<green><bold>▶ Start Match</bold></green>",
+          List.of("<gray>Players: <white>" + lobby.size() + "</white></gray>", "<yellow>Click to begin match</yellow>"),
           ctx -> {
-            LobbyResult result = lobbyManager.start(ctx.player());
-            if (result == LobbyResult.STARTED) {
-              serverAdapter.menus().close(ctx.player());
-            } else {
-              ctx.player().sendActionBar(switch (result) {
-                case TOO_FEW -> "<red>Not enough players to start (min " + requiredPlayers + ").</red>";
-                case FULL -> "<red>Too many players for the configured team slots.</red>";
-                default -> "<red>Could not start the match.</red>";
-              });
+            if (lobbyManager != null) {
+              LobbyResult result = lobbyManager.start(ctx.player());
+              if (result != LobbyResult.STARTED) {
+                ctx.player().sendActionBar("<red>Cannot start match yet.</red>");
+              }
             }
           }).withModel(MenuArt.model(MenuArt.ICON_START)));
     }
-    view.set(view.size() - 1, MenuButton.of(ItemKey.minecraft("barrier"),
-        "<red><bold>Leave lobby</bold></red>", List.of(),
-        ctx -> {
-          serverAdapter.menus().close(ctx.player());
-          lobbyManager.leave(ctx.player());
-        }).withModel(MenuArt.model(MenuArt.ICON_LEAVE)));
+
     support.open(player, view);
+    support.trackLive(player, menus::openLobby);
   }
 
-  /**
-   * Pick a friend (or any online player) to invite to your lobby — friends first. The single reusable
-   * invite picker, replacing the old separate party-invite and match-lobby-invite grids.
-   */
-  void openInviteFromFriends(PlayerAdapter player) {
-    FriendService friendService = support.friendService;
-    GameManager gameManager = support.gameManager;
-    ServerAdapter serverAdapter = support.serverAdapter;
-    MenuView view = new MenuView("<green><bold>Invite to Lobby</bold></green>", 6).background(MenuArt.BG_LOBBY);
-    int slot = 0;
-    Set<UUID> shown = new HashSet<>();
-    // Online friends first (with a green presence dot).
-    if (friendService != null) {
-      for (FriendService.Entry entry : friendService.friends(player.uniqueId())) {
-        if (slot >= 45) {
-          break;
-        }
-        PlayerAdapter friend = serverAdapter.player(entry.playerId()).filter(PlayerAdapter::online).orElse(null);
-        if (friend == null || friend.uniqueId().equals(player.uniqueId()) || gameManager.matchOf(friend) != null) {
-          continue;
-        }
-        shown.add(friend.uniqueId());
-        view.set(slot++, inviteHead(friend, true));
-      }
+  MenuButton lobbyButton(Lobby lobby) {
+    if (lobby == null) {
+      return null;
     }
-    // Then any other online player not already shown as a friend.
-    for (PlayerAdapter candidate : serverAdapter.onlinePlayers()) {
-      if (slot >= 45) {
-        break;
-      }
-      if (candidate.uniqueId().equals(player.uniqueId()) || shown.contains(candidate.uniqueId())
-          || gameManager.matchOf(candidate) != null) {
-        continue;
-      }
-      view.set(slot++, inviteHead(candidate, false));
-    }
-    if (slot == 0) {
-      view.set(22, MenuButton.label(ItemKey.minecraft("barrier"), "<gray>No players available to invite</gray>", List.of()));
-    }
-    view.set(view.size() - 9, support.back(ctx -> menus.openLobby(ctx.player())));
-    support.open(player, view);
-  }
-
-  private MenuButton inviteHead(PlayerAdapter target, boolean friend) {
-    LobbyManager lobbyManager = support.lobbyManager;
-    ServerAdapter serverAdapter = support.serverAdapter;
-    UUID targetId = target.uniqueId();
-    String targetName = target.name();
-    return MenuButton.head(targetId,
-        (friend ? "<green>● </green>" : "") + "<white>" + MenuSupport.escape(targetName) + "</white>",
-        List.of(friend ? "<green>Friend</green>" : "<gray>Online</gray>", "<yellow>Click to invite</yellow>"),
+    String hostName = support.name(lobby.host());
+    String modeId = lobby.modeId() == null ? "group" : lobby.modeId();
+    GameModeDescriptor descriptor = support.descriptorOf(modeId);
+    String modeName = descriptor != null ? descriptor.displayName() : modeId;
+    ItemKey icon = descriptor != null ? support.icon(modeId) : ItemKey.minecraft("cake");
+    int size = lobby.size();
+    int cap = lobby.capacity();
+    String count = cap == Integer.MAX_VALUE ? size + " players" : size + "/" + cap + " players";
+    return MenuButton.of(icon, "<gold><bold>" + MenuSupport.escape(hostName) + "'s Lobby</bold></gold>",
+        List.of("<gray>Mode: <white>" + MenuSupport.escape(modeName) + "</white></gray>",
+            "<gray>Players: <white>" + count + "</white></gray>",
+            "<yellow>Click to join lobby</yellow>"),
         ctx -> {
-          LobbyResult result = lobbyManager.invite(ctx.player(), serverAdapter.player(targetId).orElse(target));
-          ctx.player().sendActionBar(support.lobbyInviteMessage(result, targetName));
-          if (result == LobbyResult.INVITE_SENT) {
-            serverAdapter.player(targetId).filter(PlayerAdapter::online).ifPresent(invitee ->
-                invitee.sendMiniMessage("<aqua>" + MenuSupport.escape(ctx.player().name())
-                    + "</aqua> <gray>invited you to their lobby — open the menu ▶ Lobby ▶ Invites.</gray>"));
+          LobbyManager lobbyManager = support.lobbyManager;
+          if (lobbyManager != null) {
+            LobbyResult result = lobbyManager.join(ctx.player(), lobby.id());
+            ctx.player().sendActionBar(support.lobbyAcceptMessage(result, hostName));
+            if (result == LobbyResult.JOINED) {
+              menus.openLobby(ctx.player());
+            }
           }
-          menus.openInviteFromFriends(ctx.player());
-        });
+        }).withModel(MenuArt.model(MenuArt.ICON_JOIN));
   }
 
-  /**
-   * The "Friends" hotbar roster: every online friend shown as their own head, hovering to reveal their
-   * username and exactly where they are right now (which experience / minigame / the lobby). Tapping a
-   * friend who is inside an experience joins that experience via the existing friend-join system; tapping
-   * a friend standing in a lobby teleports the viewer to them, even across different lobby worlds.
-   */
-  void openFriendsWarp(PlayerAdapter player) {
+  void openInviteFromFriends(PlayerAdapter player) {
+    openInviteFromFriends(player, 0);
+  }
+
+  void openInviteFromFriends(PlayerAdapter player, int page) {
+    LobbyManager lobbyManager = support.lobbyManager;
     FriendService friendService = support.friendService;
     ServerAdapter serverAdapter = support.serverAdapter;
-    MenuView view = new MenuView("<green><bold>Friends</bold></green>", 6).background(MenuArt.BG_FRIENDS);
-    int slot = 0;
+    UUID id = player.uniqueId();
+
+    Set<UUID> friendIds = new HashSet<>();
     if (friendService != null) {
-      for (FriendService.Entry entry : friendService.friends(player.uniqueId())) {
-        if (slot >= 45) {
-          break;
-        }
-        PlayerAdapter friend = serverAdapter.player(entry.playerId()).filter(PlayerAdapter::online).orElse(null);
-        if (friend == null || friend.uniqueId().equals(player.uniqueId())) {
-          continue;
-        }
-        view.set(slot++, friendWarpButton(friend));
+      for (FriendService.Entry friend : friendService.friends(id)) {
+        friendIds.add(friend.playerId());
       }
     }
-    if (slot == 0) {
-      view.set(22, MenuButton.label(ItemKey.minecraft("barrier"), "<gray>No friends online</gray>",
-          List.of("<gray>Add friends from the Friends menu</gray>")));
+
+    List<PlayerAdapter> candidates = new ArrayList<>();
+    for (PlayerAdapter online : serverAdapter.onlinePlayers()) {
+      if (!online.uniqueId().equals(id)) {
+        if (friendIds.contains(online.uniqueId())) {
+          candidates.add(0, online);
+        } else {
+          candidates.add(online);
+        }
+      }
     }
-    view.set(view.size() - 9, support.back(ctx -> menus.openMain(ctx.player())));
+
+    MenuView view = PaginatedScreen.<PlayerAdapter>of("<green><bold>Invite to Lobby</bold></green>")
+        .background(MenuArt.BG_LOBBY)
+        .items(candidates)
+        .page(page)
+        .emptyIndicator(MenuButton.label(ItemKey.minecraft("paper"), "<gray><bold>No players online to invite</bold></gray>", List.of()))
+        .itemMapper(target -> {
+          boolean friend = friendIds.contains(target.uniqueId());
+          return MenuButton.head(target.uniqueId(),
+              (friend ? "<green>★ " : "<white>") + MenuSupport.escape(target.name()) + (friend ? "</green>" : "</white>"),
+              List.of(friend ? "<green>Friend</green>" : "<gray>Online player</gray>", "<yellow>Click to invite to lobby</yellow>"),
+              ctx -> {
+                if (lobbyManager == null) return;
+                LobbyResult result = lobbyManager.invite(ctx.player(), target);
+                ctx.player().sendActionBar(support.lobbyInviteMessage(result, target.name()));
+                if (result == LobbyResult.INVITE_SENT) {
+                  target.sendMiniMessage("<aqua>" + MenuSupport.escape(ctx.player().name())
+                      + "</aqua> <gray>invited you to their lobby — open the menu ▶ Friends ▶ Invites.</gray>");
+                }
+                menus.openLobby(ctx.player());
+              });
+        })
+        .onPageChange(p -> openInviteFromFriends(player, p))
+        .back(support.back(ctx -> menus.openLobby(ctx.player())))
+        .build();
+
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.LOBBY_SOCIAL);
     support.open(player, view);
   }
 
-  /** One friend head: name = username, lore = current location, click = join their experience / teleport. */
-  private MenuButton friendWarpButton(PlayerAdapter friend) {
+  void openFriendsWarp(PlayerAdapter player) {
+    openFriendsWarp(player, 0);
+  }
+
+  void openFriendsWarp(PlayerAdapter player, int page) {
+    FriendService friendService = support.friendService;
+    ServerAdapter serverAdapter = support.serverAdapter;
     GameManager gameManager = support.gameManager;
     ExperienceService experienceService = support.experienceService;
-    ServerAdapter serverAdapter = support.serverAdapter;
-    UUID friendId = friend.uniqueId();
-    String friendName = friend.name();
-    ActiveMatch match = gameManager.matchOf(friend);
-    ExperienceManager.Experience experience = match != null && experienceService != null
-        ? experienceService.registry().byWorld(
-            com.sexidium.core.world.WorldKey.fromRuntime(match.worldName()).orElse(null)) : null;
-    String location;
-    String action;
-    if (experience != null) {
-      location = "<light_purple>In: <white>" + MenuSupport.escape(experience.displayName()) + "</white></light_purple>";
-      action = "<yellow>Tap to join their world</yellow>";
-    } else if (match != null) {
-      GameModeDescriptor descriptor = support.descriptorOf(match.modeId());
-      String modeName = descriptor != null ? descriptor.displayName() : match.modeId();
-      location = "<aqua>Playing: <white>" + MenuSupport.escape(modeName) + "</white></aqua>";
-      action = "<dark_gray>Can't join a match in progress</dark_gray>";
-    } else {
-      location = "<gray>In the lobby</gray>";
-      action = "<yellow>Tap to teleport to them</yellow>";
-    }
-    ExperienceManager.Experience joinExperience = experience;
-    boolean inMatch = match != null;
-    return MenuButton.head(friendId, "<white><bold>" + MenuSupport.escape(friendName) + "</bold></white>",
-        List.of(location, action),
-        ctx -> {
-          serverAdapter.menus().close(ctx.player());
-          if (joinExperience != null) {
-            support.announceEnter(ctx.player(), experienceService.enter(ctx.player(), joinExperience.id()));
-          } else if (!inMatch) {
-            PlayerAdapter live = serverAdapter.player(friendId).filter(PlayerAdapter::online).orElse(null);
-            if (live == null || live.position() == null) {
-              ctx.player().sendActionBar("<red>" + MenuSupport.escape(friendName) + " isn't available.</red>");
-            } else {
-              ctx.player().teleport(live.position());
-              ctx.player().sendActionBar("<green>Teleported to " + MenuSupport.escape(friendName) + ".</green>");
-            }
-          } else {
-            ctx.player().sendActionBar("<gray>" + MenuSupport.escape(friendName) + " is in a match you can't drop into.</gray>");
-          }
-        });
-  }
 
-  /** Lists every match lobby the player may join — public ones and lobbies they were invited to. */
-  void openLobbyBrowser(PlayerAdapter player) {
-    LobbyManager lobbyManager = support.lobbyManager;
-    MenuView view = new MenuView("<aqua><bold>Match Lobbies</bold></aqua>", 6).background(MenuArt.BG_LOBBY);
-    int slot = 0;
-    if (lobbyManager != null) {
-      for (Lobby lobby : lobbyManager.joinableFor(player.uniqueId(), null)) {
-        if (slot >= 45) {
-          break;
-        }
-        view.set(slot++, lobbyButton(lobby));
-      }
+    List<FriendService.Entry> friends = friendService != null ? friendService.friends(player.uniqueId()) : List.of();
+    List<PlayerAdapter> onlineFriends = new ArrayList<>();
+    for (FriendService.Entry friend : friends) {
+      serverAdapter.player(friend.playerId()).filter(PlayerAdapter::online).ifPresent(onlineFriends::add);
     }
-    if (slot == 0) {
-      view.set(22, MenuButton.label(ItemKey.minecraft("paper"), "<gray>No open match lobbies</gray>",
-          List.of("<gray>Open a minigame and pick</gray>", "<white>Create Lobby</white>")));
-    }
-    view.set(view.size() - 9, support.backButton(() -> menus.openMain(player)));
+
+    MenuView view = PaginatedScreen.<PlayerAdapter>of("<green><bold>Friends Warp</bold></green>")
+        .background(MenuArt.BG_FRIENDS)
+        .items(onlineFriends)
+        .page(page)
+        .emptyIndicator(MenuButton.label(ItemKey.minecraft("paper"), "<gray><bold>No friends online right now</bold></gray>", List.of()))
+        .itemMapper(target -> {
+          ActiveMatch match = gameManager.matchOf(target);
+          ExperienceManager.Experience experience = match != null && experienceService != null
+              ? experienceService.registry().byWorld(
+                  com.sexidium.core.world.WorldKey.fromRuntime(match.worldName()).orElse(null)) : null;
+          String location = experience != null
+              ? "In: " + experience.displayName()
+              : (match != null ? "Playing: " + match.modeId() : "In the lobby");
+          return MenuButton.head(target.uniqueId(),
+              "<green><bold>" + MenuSupport.escape(target.name()) + "</bold></green>",
+              List.of("<gray>" + MenuSupport.escape(location) + "</gray>", "<yellow>Click to warp / join world</yellow>"),
+              ctx -> {
+                serverAdapter.menus().close(ctx.player());
+                if (experience != null) {
+                  support.announceEnter(ctx.player(), experienceService.enter(ctx.player(), experience.id()));
+                } else if (match == null && target.position() != null) {
+                  ctx.player().teleport(target.position());
+                  ctx.player().sendActionBar("<green>Teleported to " + MenuSupport.escape(target.name()) + ".</green>");
+                }
+              });
+        })
+        .onPageChange(p -> openFriendsWarp(player, p))
+        .back(support.backButton(() -> menus.openMain(player)))
+        .build();
+
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.LOBBY_SOCIAL);
     support.open(player, view);
   }
 
-  /** One joinable-lobby row, labelled by host + mode + visibility. Shared by the browser and per-mode detail. */
-  MenuButton lobbyButton(Lobby lobby) {
+  void openLobbyBrowser(PlayerAdapter player) {
+    openLobbyBrowser(player, 0);
+  }
+
+  void openLobbyBrowser(PlayerAdapter player, int page) {
     LobbyManager lobbyManager = support.lobbyManager;
-    GameModeDescriptor descriptor = support.descriptorOf(lobby.modeId());
-    String modeLabel = descriptor != null ? descriptor.displayName() : lobby.modeId();
-    return MenuButton.of(support.icon(lobby.modeId()),
-        "<white><bold>" + MenuSupport.escape(support.name(lobby.host())) + "</bold></white><gray>'s lobby</gray>",
-        List.of("<gray>Mode: <white>" + MenuSupport.escape(modeLabel) + "</white></gray>",
-            "<gray>Players: <white>" + lobby.size() + (lobby.teamsEnabled() ? "/" + lobby.capacity() : "") + "</white></gray>",
-            "<gray>Teams: <white>" + (lobby.teamsEnabled() ? lobby.teamCount() : "FFA") + "</white></gray>",
-            lobby.isOpen() ? "<green>Public</green>" : "<yellow>Invite-only</yellow>",
-            "<yellow>Click to join</yellow>"),
-        ctx -> {
-          LobbyResult result = lobbyManager.join(ctx.player(), lobby.id());
-          switch (result) {
-            case JOINED -> menus.openLobby(ctx.player());
-            case ALREADY_IN -> ctx.player().sendActionBar("<red>Leave your current lobby or game first.</red>");
-            case NOT_INVITED -> ctx.player().sendActionBar("<red>That lobby is invite-only — ask the host for an invite.</red>");
-            case NOT_FOUND -> ctx.player().sendActionBar("<red>That lobby no longer exists.</red>");
-            case FULL -> ctx.player().sendActionBar("<red>That lobby is full.</red>");
-            default -> ctx.player().sendActionBar("<red>Could not join that lobby.</red>");
-          }
-        }).withModel(MenuArt.model(MenuArt.ICON_LOBBY_ROW));
+    List<Lobby> openLobbies = new ArrayList<>();
+    if (lobbyManager != null) {
+      for (Lobby lobby : lobbyManager.joinableFor(player.uniqueId(), null)) {
+        openLobbies.add(lobby);
+      }
+    }
+
+    MenuView view = PaginatedScreen.<Lobby>of("<aqua><bold>Match Lobbies</bold></aqua>")
+        .background(MenuArt.BG_LOBBY)
+        .items(openLobbies)
+        .page(page)
+        .emptyIndicator(MenuButton.label(ItemKey.minecraft("paper"), "<gray><bold>No active public lobbies</bold></gray>",
+            List.of("<gray>Host your own match lobby in Minigames!</gray>")))
+        .itemMapper(this::lobbyButton)
+        .onPageChange(p -> openLobbyBrowser(player, p))
+        .back(support.backButton(() -> menus.openMain(player)))
+        .primaryAction(MenuButton.of(ItemKey.minecraft("compass"), "<aqua><bold>⟳ Refresh</bold></aqua>",
+            List.of("<gray>Scan for open lobbies</gray>"),
+            ctx -> openLobbyBrowser(ctx.player(), page)))
+        .build();
+
+    SidebarNav.apply(view, player, menus, support, SidebarNav.NavSection.MINIGAMES);
+    support.open(player, view);
+    support.trackLive(player, p -> openLobbyBrowser(p, page));
   }
 
   private static int[] teamSlots(int teamCount) {
-    if (teamCount <= 2) {
-      return new int[] {2, 6};
-    }
-    if (teamCount == 3) {
-      return new int[] {2, 4, 6};
-    }
-    return new int[] {1, 3, 5, 7};
+    if (teamCount <= 2) return new int[] {1, 5};
+    if (teamCount == 3) return new int[] {1, 3, 5};
+    return new int[] {0, 2, 4, 6};
+  }
+
+  private void fillSeparator(MenuView view) {
+    ChestLayout.fillSeparator(view);
   }
 }

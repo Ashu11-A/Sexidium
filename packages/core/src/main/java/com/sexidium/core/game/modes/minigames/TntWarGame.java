@@ -19,8 +19,11 @@ import com.sexidium.core.i18n.MessageArg;
 import com.sexidium.core.i18n.LocalizedText;
 import com.sexidium.core.i18n.MessageKey;
 import com.sexidium.core.lib.data.LeaderboardEntry;
+import com.sexidium.core.menu.ChestLayout;
+import com.sexidium.core.menu.MenuArt;
 import com.sexidium.core.menu.MenuButton;
 import com.sexidium.core.menu.MenuView;
+import com.sexidium.core.menu.SidebarScreen;
 import com.sexidium.core.platform.BossBarHandle;
 import com.sexidium.core.platform.HudSurfaceHandle;
 import com.sexidium.core.platform.hud.HudSurfaceSpec;
@@ -415,15 +418,54 @@ public final class TntWarGame extends BattleMode {
 
   private void openBuildMenu(PlayerAdapter player) {
     List<ItemKey> palette = config.buildPalette();
-    int rows = Math.max(1, Math.min(6, (palette.size() + 8) / 9));
-    MenuView view = new MenuView("<dark_red><bold>TNT War Build Menu</bold></dark_red>", rows);
+    SidebarScreen.Builder screen = SidebarScreen.of("<dark_red><bold>TNT War Build Menu</bold></dark_red>")
+        .background(MenuArt.BG_MINIGAMES);
+
+    // Sidebar: Category navigation
+    screen.sidebarIndex(0, MenuButton.label(ItemKey.minecraft("chest"),
+        "<gold><bold>All Blocks</bold></gold>",
+        List.of("<gray>Full building palette</gray>", "<dark_gray>Infinite supply</dark_gray>")));
+
+    screen.sidebarIndex(1, MenuButton.label(ItemKey.minecraft("stone_bricks"),
+        "<aqua><bold>Building</bold></aqua>",
+        List.of("<gray>Walls, stairs & slabs</gray>")));
+
+    screen.sidebarIndex(2, MenuButton.label(ItemKey.minecraft("redstone"),
+        "<red><bold>Redstone</bold></red>",
+        List.of("<gray>Wiring, repeaters & levers</gray>")));
+
+    screen.sidebarIndex(3, MenuButton.label(ItemKey.minecraft("tnt"),
+        "<yellow><bold>Explosives</bold></yellow>",
+        List.of("<gray>TNT, dispensers & pistons</gray>")));
+
+    screen.sidebarIndex(4, MenuButton.label(ItemKey.minecraft("diamond_pickaxe"),
+        "<green><bold>Tools</bold></green>",
+        List.of("<gray>Buckets, carts & picks</gray>")));
+
+    // Content: 35-slot content area (Columns 2–8, Rows 0–4)
+    int contentIndex = 0;
     for (ItemKey item : palette) {
+      if (contentIndex >= ChestLayout.CONTENT_CAPACITY) {
+        break;
+      }
       ItemKey icon = item;
-      view.add(MenuButton.of(icon, "<white>" + prettyName(item) + "</white>",
-          List.of("<gray>Click to grab - infinite during the war</gray>"),
-          ctx -> ctx.player().inventory().add(new ItemStackData(icon, paletteAmount(icon), Map.of()))));
+      screen.contentIndex(contentIndex++, MenuButton.of(icon, "<white>" + prettyName(item) + "</white>",
+          List.of("<gray>Click to grab — infinite during the war</gray>"),
+          ctx -> {
+            if (ctx.player() != null && ctx.player().inventory() != null) {
+              ctx.player().inventory().add(new ItemStackData(icon, paletteAmount(icon), Map.of()));
+            }
+          }));
     }
-    gameContext.server().menus().open(player, view);
+
+    // Bottom Nav: Close button at slot 47
+    screen.back(MenuButton.of(ItemKey.minecraft("barrier"),
+        "<red><bold>✕ Close</bold></red>",
+        List.of("<gray>Close the build menu</gray>"),
+        ctx -> gameContext.server().menus().close(ctx.player()))
+        .withModel(MenuArt.model(MenuArt.ICON_LEAVE)));
+
+    gameContext.server().menus().open(player, screen.build());
   }
 
   private int paletteAmount(ItemKey item) {
