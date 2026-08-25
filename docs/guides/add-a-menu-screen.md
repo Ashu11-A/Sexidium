@@ -9,28 +9,35 @@ NeoForge plain container) — **a technique is only acceptable if it has a defin
 
 | Concern | File(s) |
 |---|---|
-| Public facade + hub registry | `packages/core/src/main/java/com/sexidium/core/menu/MenuService.java` (`MenuCatalog`, `MenuTab`, `registerHubTabs`) |
-| Screen classes (one per domain) | `…/menu/HubMenu.java`, `MinigameMenu.java`, `ExperienceMenu.java`, `LobbyMenu.java`, `SocialMenu.java`, `AdminMenu.java` |
+| Public facade | `packages/core/src/main/java/com/sexidium/core/menu/MenuService.java` — every screen is reached through it, never directly |
+| Screen framework | `…/menu/ChestLayout.java` (slot grid), `Screen.java`/`AbstractScreen.java`, `SidebarScreen.java`, `PaginatedScreen.java`, `PickerScreen.java`, `ConfirmableScreen.java`, `SidebarNav.java` |
+| Screen classes (one per domain) | `…/menu/MinigameMenu.java`, `ExperienceMenu.java`, `LobbyMenu.java`, `SocialMenu.java`, `AdminMenu.java` — all `SidebarScreen` subclasses |
 | Shared toolkit + per-player state | `…/menu/MenuSupport.java` (builder selections, tap-again confirm, back buttons, player picker, roster) |
 | View model | `…/menu/MenuView.java`, `MenuButton.java`, `MenuContext.java` |
 | Custom art (icons/backgrounds/scenes) | `…/menu/MenuArt.java`, `MenuArtIcons.java`, `…/menu/scene/`, pack in `…/menu/pack/` |
 | Bedrock projection | `…/menu/MenuForms.java` |
 | Paper renderer | `packages/module-paper/…/adapter/menu/PaperMenuAdapter.java`, `PaperFormRenderer.java` |
-| Drift guards | `MenuArtCoverageTest`, `MenuArtAssetsTest`, `MenuArtChestTest`, `MenuFormsTest` |
+| Drift guards | `MenuArtCoverageTest`, `MenuArtAssetsTest`, `MenuArtChestTest`, `MenuFormsTest`, `ChestLayoutTest`, `ScreenFrameworkTest`, `PaginatedScreenTest`, `SidebarLayoutGridTest`, `MenuFormsSidebarProjectionTest` |
 
 ## How to add a screen
 
 1. Put the builder method on the domain's screen class (or create one composing `MenuSupport` and wire it
    in `MenuService`'s constructor + a delegating public method — `MenuService` stays the only public
    entry point; commands and adapters call it, never the screen classes).
-2. Build a `MenuView(title, rows)`; place `MenuButton`s with `view.set(slot, …)` / `view.add(…)`.
-   Factories: `MenuButton.of(icon, name, lore, onClick)`, `.label(...)` (decorative — a **null onClick is
-   the signal** `MenuForms` uses to treat it as body text on Bedrock), `.head(uuid, …)` for player heads,
-   `.withModel(MenuArt.model(...))` for pack icons.
-3. Back button at `size - 9` via `support.back(...)`/`backButton(...)`. Backgrounds via
-   `.background(MenuArt.BG_*)` — purely additive, ignored by no-pack/Bedrock viewers.
-4. New top-level hub entry? Register a `MenuTab` in `MenuService.registerHubTabs()` — the hub lays itself
-   out; **no slot math in the hub**.
+2. Extend `SidebarScreen` (or `PaginatedScreen`/`PickerScreen` for a list) and fill the hooks —
+   `buildSidebar`, `buildContent`, `buildBottomNav`. For a one-off screen, the fluent form
+   `SidebarScreen.of(title).contentIndex(i, button)…build()` returns the `MenuView` directly.
+   **No raw slot math**: address the grid through `ChestLayout` (28 content slots by index, 6 sidebar
+   slots, fixed nav slots) so every screen keeps the same shape.
+3. Buttons come from the same factories as before: `MenuButton.of(icon, name, lore, onClick)`,
+   `.label(...)` (decorative — a **null onClick is the signal** `MenuForms` uses to treat it as body text
+   on Bedrock), `.head(uuid, …)` for player heads, `.withModel(MenuArt.model(...))` for pack icons.
+4. The framework owns navigation: `SidebarNav.apply(view, player, menus, support, NavSection.X)` renders
+   the rail with your section active, `back(...)` fills `ChestLayout.SLOT_BACK`, and `PaginatedScreen`
+   wires prev/page/next itself. Backgrounds via `.background(MenuArt.BG_*)` — purely additive, ignored by
+   no-pack/Bedrock viewers.
+5. More than 28 entries? Use `PaginatedScreen` rather than a bigger grid, and expose a page-taking
+   overload on `MenuService` so the page controls can re-enter the screen.
 
 ## Cross-play rules (non-negotiable)
 
@@ -57,6 +64,8 @@ menu-art assets, and call `.withModel(...)`. `MenuArtCoverageTest` (registry/cat
 ## Checklist
 
 - [ ] Screen reachable only through a `MenuService` public method
+- [ ] Slots addressed through `ChestLayout`, sidebar rendered by `SidebarNav`
+- [ ] Any list longer than the content area paginated, not truncated
 - [ ] Works with zero pack art (vanilla icons, plain title)
 - [ ] Bedrock-safe: state in names, tap-again confirms, no shift/hover dependence
 - [ ] Per-player state cleared at every entry point
@@ -64,5 +73,6 @@ menu-art assets, and call `.withModel(...)`. `MenuArtCoverageTest` (registry/cat
 - [ ] [menus.md](../interface/menus.md) updated in the same change
 
 ---
-*Keeping this current: tracks `MenuService`/`MenuSupport`/`MenuView`/`MenuButton`, the screen classes,
-`MenuArt(Icons)` and `MenuForms`. Update it in the same change that alters those workflows.*
+*Keeping this current: tracks `MenuService`/`MenuSupport`/`MenuView`/`MenuButton`, the screen framework
+(`ChestLayout`, `SidebarScreen`, `PaginatedScreen`, `SidebarNav`), the screen classes, `MenuArt(Icons)`
+and `MenuForms`. Update it in the same change that alters those workflows.*
