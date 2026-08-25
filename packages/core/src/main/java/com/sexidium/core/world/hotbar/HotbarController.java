@@ -12,7 +12,6 @@ import com.sexidium.core.world.hotbar.items.LobbyLeaveItem;
 import com.sexidium.core.world.hotbar.items.LobbyStartItem;
 import com.sexidium.core.world.hotbar.items.LobbyTeamColorItem;
 import com.sexidium.core.world.hotbar.items.LobbyTeamCountItem;
-import com.sexidium.core.world.hotbar.items.MenuNavItem;
 import com.sexidium.core.world.hotbar.items.MinigamesItem;
 import com.sexidium.core.world.hotbar.items.MyExperiencesItem;
 import com.sexidium.core.world.lobby.LobbyManager;
@@ -33,7 +32,7 @@ import java.util.Map;
  * an empty list — the platform then strips managed slots, which is exactly why lobby items can never
  * enter a match (and vice versa). To add a lobby item, subclass {@link HotbarItem} and add it to the
  * LOBBY profile here; the platform picks it up with no adapter change. See
- * {@code docs/ui-interaction-system.md}.</p>
+ * {@code docs/interface/ui-interaction-system.md}.</p>
  */
 public final class HotbarController {
   private static final HotbarProfile EMPTY = new HotbarProfile(List.of());
@@ -46,13 +45,11 @@ public final class HotbarController {
     this.services = new HotbarServices(server, games, lobbies, friends, menus);
     // The lobby hotbar. Each item decides its own visibility per context, so the same profile renders the
     // default lobby items for a solo player AND swaps to the lobby-management tools (team controls, invite,
-    // start, per-team colour picks, leave) once the player configures/joins a match lobby. The compass
-    // (MenuNavItem) is always present and always opens the menu / lobby chest GUI.
+    // start, per-team colour picks, leave) once the player configures/joins a match lobby.
     profiles.put(HotbarScope.LOBBY, new HotbarProfile(List.of(
-        new MenuNavItem(),
-        // Default (not-managing) items.
-        new MyExperiencesItem(),
+        // Default (not-managing) items: Slot 0 (Hotbar 1) = Minigames sword, Slot 1 (Hotbar 2) = Ender Chest.
         new MinigamesItem(),
+        new MyExperiencesItem(),
         new FriendsItem(),
         new FriendRequestsItem(),
         // Lobby-management items (owner + invited), gated by lobby state / role inside each item.

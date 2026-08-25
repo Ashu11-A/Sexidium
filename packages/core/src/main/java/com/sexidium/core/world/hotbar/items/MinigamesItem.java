@@ -8,7 +8,7 @@ import com.sexidium.core.world.hotbar.HotbarItem;
 
 import java.util.List;
 
-/** Slot 2 — the diamond-sword "Minigames": jumps straight to the competitive mode grid. */
+/** Slot 0 (Hotbar 1) — the diamond-sword "Minigames": jumps straight to the competitive mode grid. */
 public final class MinigamesItem extends HotbarItem {
   private static final String TITLE = "<aqua><bold>Minigames</bold></aqua>";
 
@@ -19,7 +19,7 @@ public final class MinigamesItem extends HotbarItem {
 
   @Override
   public int slot() {
-    return 2;
+    return 0;
   }
 
   @Override
