@@ -24,8 +24,10 @@ public final class MenuForms {
   }
 
   /**
-   * The clickable buttons of {@code view}, in ascending slot order. Each becomes one Form button; the
-   * list index is the Form button id, so the renderer maps {@code clickedButtonId() -> onClick}.
+   * The clickable buttons of {@code view}, projected in logical reading order (Sidebar -> Content -> Bottom Nav)
+   * for standard 54-slot double chests, and ascending slot order for non-standard views.
+   * Each becomes one Form button; the list index is the Form button id, so the renderer maps
+   * {@code clickedButtonId() -> onClick}. Separator panes are strictly excluded.
    */
   public static List<Map.Entry<Integer, MenuButton>> actions(MenuView view) {
     List<Map.Entry<Integer, MenuButton>> result = new ArrayList<>();
@@ -43,15 +45,16 @@ public final class MenuForms {
 
   /**
    * The non-interactive decorative buttons of {@code view} (empty-state messages, read-only roster
-   * rows, section headers), in ascending slot order. A renderer can join their names/lore into the
-   * Form body so the screen still carries its context text.
+   * rows, section headers), projected in logical reading order. Blank separator glass panes are excluded.
+   * A renderer can join their names/lore into the Form body so the screen still carries its context text.
    */
   public static List<MenuButton> labels(MenuView view) {
     List<MenuButton> result = new ArrayList<>();
     if (view == null) {
       return result;
     }
-    for (MenuButton button : ordered(view).values()) {
+    for (Map.Entry<Integer, MenuButton> entry : ordered(view).entrySet()) {
+      MenuButton button = entry.getValue();
       if (button != null && button.onClick() == null && button.name() != null && !button.name().isBlank()) {
         result.add(button);
       }
@@ -59,7 +62,35 @@ public final class MenuForms {
     return result;
   }
 
-  private static TreeMap<Integer, MenuButton> ordered(MenuView view) {
+  private static int sectionRank(int slot) {
+    if (ChestLayout.isSidebarSlot(slot)) {
+      return 0; // Sidebar (Column 0: 0, 9, 18, 27, 36, 45)
+    }
+    if (ChestLayout.isContentSlot(slot)) {
+      return 1; // Content (Cols 2-8, Rows 0-4)
+    }
+    if (ChestLayout.isBottomNavSlot(slot)) {
+      return 2; // Bottom Nav (Row 5: 47-53)
+    }
+    return 3;
+  }
+
+  private static Map<Integer, MenuButton> ordered(MenuView view) {
+    if (view == null) {
+      return Map.of();
+    }
+    if (view.size() == ChestLayout.SIZE) {
+      TreeMap<Integer, MenuButton> map = new TreeMap<>((a, b) -> {
+        int rankA = sectionRank(a);
+        int rankB = sectionRank(b);
+        if (rankA != rankB) {
+          return Integer.compare(rankA, rankB);
+        }
+        return Integer.compare(a, b);
+      });
+      map.putAll(view.buttons());
+      return map;
+    }
     return new TreeMap<>(view.buttons());
   }
 }

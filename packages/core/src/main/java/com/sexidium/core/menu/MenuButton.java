@@ -74,6 +74,10 @@ public record MenuButton(ItemKey icon, int amount, String name, List<String> lor
     return new MenuButton(icon, amount, name, lore, onClick, headOwner, model, frames);
   }
 
+  public String itemModel() {
+    return model;
+  }
+
   /**
    * This button's platform-agnostic {@link UiItem} visual — the render half a chest button shares with a
    * lobby hotbar item, so both materialize through the one platform factory. Drops the click handler,
