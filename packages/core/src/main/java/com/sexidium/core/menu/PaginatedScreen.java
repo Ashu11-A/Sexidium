@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Generic paginated 54-slot chest screen displaying up to 35 items per page (Columns 2–8, Rows 0–4).
+ * Generic paginated 54-slot chest screen displaying up to 28 items per page (Columns 2–8, Rows 0–3).
  *
  * <p>Includes built-in page controls at Row 5:
  * <ul>

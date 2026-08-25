@@ -14,14 +14,15 @@ import java.util.List;
  * Row 1: [S1] [|] [C07] [C08] [C09] [C10] [C11] [C12] [C13]  (slots  9..17)
  * Row 2: [S2] [|] [C14] [C15] [C16] [C17] [C18] [C19] [C20]  (slots 18..26)
  * Row 3: [S3] [|] [C21] [C22] [C23] [C24] [C25] [C26] [C27]  (slots 27..35)
- * Row 4: [S4] [|] [C28] [C29] [C30] [C31] [C32] [C33] [C34]  (slots 36..44)
+ * Row 4: [S4] [|] [---] [---] [---] [---] [---] [---] [---]  (slots 36..44)
  * Row 5: [S5] [|] [   ] [BCK] [PRV] [PAG] [NXT] [CHS] [PRI]  (slots 45..53)
  * </pre>
  *
  * <ul>
  *   <li><b>Sidebar (Column 0):</b> 6 slots: 0, 9, 18, 27, 36, 45.</li>
  *   <li><b>Separator (Column 1):</b> 6 divider slots: 1, 10, 19, 28, 37, 46.</li>
- *   <li><b>Content (Columns 2–8, Rows 0–4):</b> 35 capacity (5 rows × 7 columns), indices 0..34.</li>
+ *   <li><b>Content (Columns 2–8, Rows 0–3):</b> 28 capacity (4 rows × 7 columns), indices 0..27.</li>
+ *   <li><b>Row divider (Row 4, Columns 2–8):</b> slots 38..44, separating the content area from the nav row.</li>
  *   <li><b>Bottom Nav (Row 5):</b> Back at 47, Prev at 48, Page at 49, Next at 50, Chaos at 51, Primary at 53.</li>
  * </ul>
  */

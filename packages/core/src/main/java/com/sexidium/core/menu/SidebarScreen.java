@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 
 /**
  * A standard 54-slot (6 rows × 9 columns) double-chest screen with a Column 0 sidebar,
- * Column 1 separator, 35-slot content area (Columns 2–8, Rows 0–4), and Row 5 bottom navigation bar.
+ * Column 1 separator, 28-slot content area (Columns 2–8, Rows 0–3), and Row 5 bottom navigation bar.
  *
  * <p>Supports both inheritance (subclassing {@link #buildSidebar}, {@link #buildContent}, {@link #buildBottomNav})
  * and fluent composition via {@link #of(String)}.</p>

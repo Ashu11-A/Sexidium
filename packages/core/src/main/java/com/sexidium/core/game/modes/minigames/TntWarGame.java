@@ -442,7 +442,7 @@ public final class TntWarGame extends BattleMode {
         "<green><bold>Tools</bold></green>",
         List.of("<gray>Buckets, carts & picks</gray>")));
 
-    // Content: 35-slot content area (Columns 2–8, Rows 0–4)
+    // Content: the 28-slot content area (Columns 2–8, Rows 0–3)
     int contentIndex = 0;
     for (ItemKey item : palette) {
       if (contentIndex >= ChestLayout.CONTENT_CAPACITY) {
