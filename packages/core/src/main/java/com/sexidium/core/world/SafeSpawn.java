@@ -259,7 +259,83 @@ public final class SafeSpawn {
    * @param around the player's feet
    */
   public static WorldPosition nearestFree(WorldAdapter world, WorldPosition around) {
-    return near(world, around);
+    if (world == null || around == null) {
+      return around;
+    }
+    String worldName = around.worldName() != null ? around.worldName() : world.name();
+    int originX = (int) Math.floor(around.coordinateX());
+    int originY = (int) Math.floor(around.coordinateY());
+    int originZ = (int) Math.floor(around.coordinateZ());
+    int floor = world.minBuildHeight();
+    int ceiling = floor + 384;
+
+    WorldPosition bestSupported = null;
+    double bestSupportedDistSq = Double.MAX_VALUE;
+
+    WorldPosition bestFloating = null;
+    double bestFloatingDistSq = Double.MAX_VALUE;
+
+    for (int shell = 0; shell <= LOCAL_ESCAPE_RADIUS; shell++) {
+      if (bestSupported != null && shell > 1) {
+        double lowerBound = (shell - 1) * (shell - 1);
+        if (lowerBound >= bestSupportedDistSq) {
+          break;
+        }
+      }
+
+      for (int dx = -shell; dx <= shell; dx++) {
+        for (int dy = -shell; dy <= shell; dy++) {
+          for (int dz = -shell; dz <= shell; dz++) {
+            if (shell > 0 && Math.abs(dx) != shell && Math.abs(dy) != shell && Math.abs(dz) != shell) {
+              continue;
+            }
+            int x = originX + dx;
+            int y = originY + dy;
+            int z = originZ + dz;
+
+            if (y < floor || y + 1 > ceiling) {
+              continue;
+            }
+
+            if (!isFree(world, worldName, x, y, z) || !isFree(world, worldName, x, y + 1, z)) {
+              continue;
+            }
+
+            String underValue = blockValue(world, worldName, x, y - 1, z);
+            if ("lava".equals(underValue) || "flowing_lava".equals(underValue)) {
+              continue;
+            }
+
+            boolean isSolidGround = !LIQUIDS.contains(underValue) && !isPassable(underValue);
+            double targetCenterX = x + 0.5;
+            double targetCenterY = y;
+            double targetCenterZ = z + 0.5;
+            double distSq = (targetCenterX - around.coordinateX()) * (targetCenterX - around.coordinateX())
+                + (targetCenterY - around.coordinateY()) * (targetCenterY - around.coordinateY())
+                + (targetCenterZ - around.coordinateZ()) * (targetCenterZ - around.coordinateZ());
+
+            WorldPosition candidate = centred(around, worldName, x, y, z);
+
+            if (isSolidGround) {
+              if (distSq < bestSupportedDistSq) {
+                bestSupportedDistSq = distSq;
+                bestSupported = candidate;
+              }
+            } else {
+              if (distSq < bestFloatingDistSq && standsOverGround(world, worldName, candidate, floor)) {
+                bestFloatingDistSq = distSq;
+                bestFloating = candidate;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (bestSupported != null) {
+      return bestSupported;
+    }
+    return bestFloating;
   }
 
   /**
