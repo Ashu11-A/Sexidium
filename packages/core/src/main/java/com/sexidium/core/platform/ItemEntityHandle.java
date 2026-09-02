@@ -8,7 +8,7 @@ import java.util.UUID;
 /**
  * A platform handle to a single dropped item entity on the ground, so the core
  * {@link com.sexidium.core.game.experience.compose.StackMergeService} can track over-cap loot stacks and
- * consolidate them over time without depending on Bukkit/NeoForge types. Mirrors {@link MobHandle}.
+ * consolidate them over time without depending on Bukkit/Minecraft types. Mirrors {@link MobHandle}.
  *
  * <p>An over-cap stack (more than the vanilla 64) is a normal item entity whose amount has been grown;
  * the handle reads and edits that amount in place so two stacks can pour into each other.</p>

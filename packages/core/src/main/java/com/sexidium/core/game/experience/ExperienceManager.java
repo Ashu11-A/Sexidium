@@ -1420,7 +1420,7 @@ public final class ExperienceManager {
    * Reduces an arbitrary nick or map name to a single safe path/world-name segment: lowercases letters,
    * keeps digits, {@code -} and {@code _}; every other run (spaces, punctuation, non-ASCII) collapses to
    * one {@code _}. Trims leading/trailing {@code _}, caps length, and falls back to {@code fallback} when
-   * nothing usable remains. Lowercasing keeps the segment valid as a NeoForge dimension id (which must be
+   * nothing usable remains. Lowercasing keeps the segment valid as a Minecraft dimension id (which must be
    * {@code [a-z0-9/._-]}) while staying a legal Bukkit world-name segment, so one key works on both
    * platforms; the result is always a valid, non-empty folder/world segment.
    */

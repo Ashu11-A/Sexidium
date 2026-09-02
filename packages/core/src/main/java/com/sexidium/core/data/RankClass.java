@@ -8,7 +8,7 @@ import java.util.Locale;
  *
  * <p>A player's class is derived from their rank <em>level</em> (level = points / points-per-level)
  * via {@link #forLevel(int)}. Each class carries a display name and a hex colour reused everywhere a
- * rank tag is rendered: the in-game scoreboard-team name prefix (Paper + NeoForge), the Discord role
+ * rank tag is rendered: the in-game scoreboard-team name prefix (Paper), the Discord role
  * colour and the satori rank cards. Keeping the thresholds and colours in one place guarantees the
  * Minecraft server and the Discord bot agree on what tag a player wears.</p>
  *

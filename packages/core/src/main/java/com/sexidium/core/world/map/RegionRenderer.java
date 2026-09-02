@@ -6,7 +6,7 @@ import com.sexidium.core.platform.model.WorldPosition;
 /**
  * Draws a {@link Cuboid} as a coloured particle wireframe and marks spawn points, by stepping points
  * along the box edges and calling {@link WorldAdapter#spawnDust}. Platform-agnostic and side-effect
- * free apart from the particle calls, so it is driven the same way on Paper and NeoForge and can be
+ * free apart from the particle calls, so it is driven the same way on every platform and can be
  * unit-tested with a fake {@link WorldAdapter} that records the dust calls.
  *
  * <p>Used by the map editor's debug render loop to show each team's region in its team colour.</p>

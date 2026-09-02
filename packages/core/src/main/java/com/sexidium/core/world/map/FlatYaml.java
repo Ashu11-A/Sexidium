@@ -13,7 +13,7 @@ import java.util.Map;
  * The single flat {@code key: value} YAML subset shared by every in-world settings sidecar Sexidium
  * writes ({@code sexidium-tntwar.yml}, {@code sexidium-combat.yml}, {@code sexidium-lobby.yml}, …). Core
  * deliberately owns this tiny reader/writer instead of pulling a platform YAML library into the
- * platform-agnostic module, so the file format is byte-identical on Paper and NeoForge. It is the unify
+ * platform-agnostic module, so the file format is byte-identical wherever core runs. It is the unify
  * primitive behind {@link SpawnPointStore} and {@code TntWarMapStore}: one place that parses lines into a
  * {@code key -> value} map and quotes/parses scalar values, so the spawn/map stores never re-implement it.
  */

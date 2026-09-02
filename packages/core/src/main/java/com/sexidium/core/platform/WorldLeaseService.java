@@ -92,7 +92,7 @@ public interface WorldLeaseService {
    * {@code templateWorldName} under {@link #worldRoot()} (keeping the template's own {@code level.dat}),
    * then disposes the edit world. So structures the admin builds in the clone become part of the BASE map
    * that {@link #acquireOrCreateClone} stamps out for each match. Returns true when the copy succeeded.
-   * Default: just dispose the lease (no persistence — e.g. NeoForge).
+   * Default: just dispose the lease (no persistence).
    */
   default boolean saveTemplateAndDispose(WorldLease lease, String templateWorldName) {
     if (lease != null) {

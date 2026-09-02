@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * Reads/writes a {@link BattleMap} as {@code sexidium-battlemap.yml} inside the map's world folder,
  * using the shared flat {@code key: value} YAML subset ({@link FlatYaml}) so the format is identical on
- * Paper and NeoForge and a cloned match world carries its own copy. Mirrors the load/save shape of the
+ * every backend and a cloned match world carries its own copy. Mirrors the load/save shape of the
  * older {@code TntWarMapStore} / {@link SpawnPointStore}, generalised to N teams.
  */
 public final class BattleMapStore {

@@ -2,7 +2,7 @@ package com.sexidium.core.platform;
 
 /**
  * Platform scheduling seam. The four base methods cover global / world-independent work and run on the
- * server's global region under Folia (or the main thread on regular Paper / NeoForge).
+ * server's global region under Folia (or the main thread on regular Paper).
  *
  * <p>The {@code runForPlayer*} / {@code runAtRegion} methods express <b>region-scoped</b> scheduling:
  * on Folia, where the world is split into independently-ticked regions, a task that touches a specific

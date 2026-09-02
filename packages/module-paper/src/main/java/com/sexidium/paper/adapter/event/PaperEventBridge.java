@@ -393,7 +393,7 @@ public final class PaperEventBridge implements Listener {
   // Bukkit has no generic "inventory changed" event, so click/drag alone miss items gained by
   // picking up, mining, crafting or smelting. These add to the inventory AFTER the event fires,
   // so we re-scan one tick later. This makes RaceGame.scanInventory credit acquired items on
-  // Paper, matching the NeoForge per-tick inventory diff.
+  // Paper.
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onItemPickup(EntityPickupItemEvent event) {
     if (event.getEntity() instanceof Player player) {

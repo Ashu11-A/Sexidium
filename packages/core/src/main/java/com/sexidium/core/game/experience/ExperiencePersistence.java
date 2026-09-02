@@ -435,7 +435,7 @@ public final class ExperiencePersistence {
       return null;
     }
     String normalized = name.replace('\\', '/');
-    // Strip a leading namespace ("sexidium:..." on NeoForge dimension ids); the namespace never contains
+    // Strip a leading namespace ("sexidium:..." style dimension ids); the namespace never contains
     // a slash, so a colon that precedes every slash is a namespace separator, not part of the key.
     int colon = normalized.indexOf(':');
     if (colon >= 0 && normalized.lastIndexOf('/', colon) < 0) {

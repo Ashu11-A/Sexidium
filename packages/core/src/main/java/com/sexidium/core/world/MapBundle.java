@@ -291,7 +291,7 @@ public final class MapBundle {
    *       redirects. Walking up blind there would invent an unrelated directory and drop a lock file in it.</li>
    * </ul>
    *
-   * <p>Keying is unaffected in the no-symlink case (standalone, NeoForge, tests): the real path of the
+   * <p>Keying is unaffected in the no-symlink case (standalone, tests): the real path of the
    * template under a real root is that same root, so the lock file, the {@link #ROOT_LOCKS} key and the
    * behaviour are byte-for-byte what they were. And because resolution is deterministic, two threads
    * reading the SAME bundle always compute the same root and therefore share one {@link RootLock} entry —

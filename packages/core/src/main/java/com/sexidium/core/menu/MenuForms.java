@@ -7,8 +7,7 @@ import java.util.TreeMap;
 
 /**
  * Derives a flat, click-only projection of a {@link MenuView} for renderers that are not slot-based
- * grids — chiefly the Bedrock Cumulus Form renderer on the Paper adapter and the NeoForge client
- * overlay. A chest {@code MenuView} is a sparse {@code slot -> button} map padded with decorative
+ * grids — chiefly the Bedrock Cumulus Form renderer on the Paper adapter. A chest {@code MenuView} is a sparse {@code slot -> button} map padded with decorative
  * filler; a Form is a vertical list of buttons with a header. This helper bridges the two without
  * touching {@link MenuService}: it reads the same {@link MenuButton}s the chest renders.
  *

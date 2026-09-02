@@ -452,7 +452,7 @@ public abstract class AbstractGame implements Game, HudHost {
       return;
     }
     // Hide this match's overlays for the player first, via the cross-platform per-match hide() (which
-    // works on NeoForge, where the player-level clearBossBars() is a no-op). This covers mid-match
+    // works where the player-level clearBossBars() cannot be trusted). This covers mid-match
     // eliminations (combat/gather/tntwar) which release the victim without going through GameManager.
     releasePlayerUi(playerAdapter);
     playerAdapter.resetStatuses();

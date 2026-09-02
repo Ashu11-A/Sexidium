@@ -3,7 +3,7 @@ package com.sexidium.core.platform;
 /**
  * Platform hook that paints a player's rank class onto their in-game name: the coloured tag above
  * their head and in the tab list. Implemented with native scoreboard Teams on both platforms (Paper
- * {@code org.bukkit.scoreboard.Team}, NeoForge {@code net.minecraft.world.scores.PlayerTeam}) — no
+ * {@code org.bukkit.scoreboard.Team}) — no
  * runtime dependency, identical result on both. The default is a no-op so headless/test adapters and
  * servers without a scoreboard keep working.
  */

@@ -17,7 +17,7 @@ import java.util.List;
  * <p>This is the minigame analogue of {@link ExperienceWorldGen}: where experiences guarantee a reachable
  * End in their generated world, minigames guarantee a usable arena in theirs. It is platform-agnostic —
  * it only drives {@link WorldAdapter#setBlock}, {@link WorldAdapter#highestSolidBlockY} and the build-height
- * bounds, so the identical generation runs on Paper and NeoForge. Coordinates are anchored on the world's
+ * bounds, so the identical generation runs on every platform. Coordinates are anchored on the world's
  * surface at/around its spawn, and every structure is levelled onto a flat platform so spawns are never
  * buried, floating, or underwater.</p>
  */

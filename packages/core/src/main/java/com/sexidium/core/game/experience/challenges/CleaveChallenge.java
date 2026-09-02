@@ -40,7 +40,7 @@ public final class CleaveChallenge extends Challenge {
   // Ids of mobs seen near a participant by the latest scan. Re-resolved to live handles on each swing.
   private final Set<UUID> trackedIds = new LinkedHashSet<>();
   // Last cleave time per player, so the same swing reported by two platform events (e.g. Paper's
-  // PlayerAnimationEvent + PlayerInteractEvent, or NeoForge's LeftClickBlock + swing poll) only cleaves once.
+  // PlayerAnimationEvent + PlayerInteractEvent pair) only cleaves once.
   private final Map<UUID, Long> lastSwingMillis = new HashMap<>();
 
   private double radius;

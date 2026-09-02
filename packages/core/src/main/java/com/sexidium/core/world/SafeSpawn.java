@@ -22,7 +22,7 @@ import java.util.Set;
  * starts below the bedrock roof, so a player never lands on top of the roof.
  *
  * <p>When the platform cannot describe blocks (a backend that only reports a surface height, e.g. the
- * NeoForge adapter or a test double — {@link WorldAdapter#blockTypeAt} then answers {@code air} even at
+ * headless adapter or a test double — {@link WorldAdapter#blockTypeAt} then answers {@code air} even at
  * the reported surface, which is impossible for a real world) the search degrades to the previous
  * behaviour: one block above the reported surface, never below a deliberately raised spawn Y.</p>
  */

@@ -4,7 +4,7 @@ import com.sexidium.core.menu.MenuView;
 
 /**
  * Renders a platform-agnostic {@link MenuView} as a chest GUI for a player and routes slot clicks
- * back to the view's button handlers. Paper uses InvUI; NeoForge uses a vanilla container menu.
+ * back to the view's button handlers. Paper renders it as a chest GUI.
  */
 public interface MenuAdapter {
   MenuAdapter NOOP = (player, view) -> {

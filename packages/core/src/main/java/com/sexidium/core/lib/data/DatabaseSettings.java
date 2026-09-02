@@ -6,7 +6,7 @@ import java.io.File;
 
 /**
  * Resolves the {@code database.*} configuration block into a {@link DatabaseConfig}, shared by every
- * adapter (Paper, NeoForge) so the selection logic lives in one place. SQLite (the default) is read from
+ * adapter (Paper game server, Velocity proxy) so the selection logic lives in one place. SQLite (the default) is read from
  * {@code database.file}; MySQL/PostgreSQL from {@code database.host/port/name/user/password/properties}.
  */
 public final class DatabaseSettings {

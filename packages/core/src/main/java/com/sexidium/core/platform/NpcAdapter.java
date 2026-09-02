@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 /**
  * Spawns and manages lobby NPCs with a floating nameplate (hologram). Paper uses the
- * FancyNpcs + FancyHolograms plugins; NeoForge spawns a native packet/display-entity NPC. The default
+ * FancyNpcs + FancyHolograms plugins (bound through PaperNpcBackend). The default
  * is inert so the core works without an NPC backend.
  */
 public interface NpcAdapter {

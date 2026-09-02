@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * Reads/writes a TNT-War map's base layout as {@code sexidium-tntwar.yml} living inside the map's world
  * folder. It shares the flat {@code key: value} YAML subset owned by core ({@link FlatYaml}) with every
- * other in-world settings sidecar (lobby/Combat spawns), so the format is identical on Paper and NeoForge.
+ * other in-world settings sidecar (lobby/Combat spawns), so the format is identical everywhere.
  * The file name is constant ({@link #FILE_NAME}) so a cloned match world carries its own copy.
  */
 public final class TntWarMapStore {

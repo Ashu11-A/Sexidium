@@ -27,7 +27,7 @@ import java.util.UUID;
  * Per-player lobby scoreboard panel: plugin name, total players online, the player's ping and their
  * online friends. Runs on a single repeating timer and is fully platform-agnostic — it drives the
  * {@link com.sexidium.core.platform.UiAdapter#createPanel} scoreboard handle that each adapter
- * implements, so it works identically on Paper and NeoForge.
+ * implements, so it works identically on every platform.
  */
 public final class LobbyHud {
   private final ServerAdapter serverAdapter;

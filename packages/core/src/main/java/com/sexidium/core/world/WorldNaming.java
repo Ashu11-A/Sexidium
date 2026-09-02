@@ -8,14 +8,14 @@ import java.util.Locale;
  * The single source of truth for how Sexidium names, classifies and addresses its managed worlds.
  *
  * <p>Historically this logic was copy-pasted (with subtle divergences) across {@code
- * PaperWorldLeaseService}, {@code NeoForgeWorldLeaseService}, both lobby bootstraps, {@code
+ * PaperWorldControl}, the lobby bootstraps, {@code
  * LobbyGuardPolicy}, {@code ExperienceStateStore} and {@code ExperienceGame}. Centralising it here lets
  * every layer build and parse the same names, so the lobby / experience / temp worlds are addressed
  * identically on every platform.</p>
  *
  * <h2>Identity model</h2>
  * Sexidium addresses a managed world by a <em>namespace</em> and a <em>key path</em>, mirroring a
- * Bukkit {@link org.bukkit.NamespacedKey NamespacedKey} (and a NeoForge {@code ResourceLocation}). On
+ * Bukkit {@link org.bukkit.NamespacedKey NamespacedKey}. On
  * Minecraft 26.1+ a keyed world lives on disk at {@code world/dimensions/<namespace>/<key-path>/}, so
  * the target layout falls out of the key directly:
  * <ul>
@@ -81,7 +81,7 @@ public final class WorldNaming {
   }
 
   /**
-   * Legacy top-level worlds root folder name (default {@code worlds}). Retained for the NeoForge
+   * Legacy top-level worlds root folder name (default {@code worlds}). Retained for legacy layouts
    * folder-based backend and tooling; the Paper dimension layout no longer uses it.
    */
   public String worldsRoot() {
@@ -372,7 +372,7 @@ public final class WorldNaming {
 
   /**
    * Reduces a raw value to one safe path/key segment: lowercases, keeps {@code [a-z0-9._-]}, collapses
-   * other runs to a single {@code _}. Valid as a Bukkit {@code NamespacedKey} segment and a NeoForge
+   * other runs to a single {@code _}. Valid as a Bukkit {@code NamespacedKey} segment and a Minecraft
    * dimension id alike. Falls back to {@code fallback} when nothing usable remains.
    */
   public static String sanitizeSegment(String raw, String fallback) {

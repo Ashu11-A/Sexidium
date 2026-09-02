@@ -7,7 +7,7 @@ import com.sexidium.core.platform.model.WorldTerrain;
  * Declarative settings a backend applies to a managed world right after it is created or loaded. Lets
  * the platform-agnostic control layer express world configuration (border, PvP, difficulty, auto-save,
  * time-of-day) once; each backend translates it to its native API. This is what closes the historical
- * Paper/NeoForge drift where, e.g., PvP and difficulty were set on Paper temp worlds but not NeoForge.
+ * drift where, e.g., PvP and difficulty were applied to some temp worlds but not others.
  *
  * @param borderSize        world-border diameter in blocks (the border is centred on the world spawn);
  *                          {@code <= 0} leaves the border untouched
