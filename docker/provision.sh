@@ -89,7 +89,7 @@ export SX_LOG_TAG
 # shellcheck source=../scripts/lib/core.sh
 . "$SX_DOCKER_DIR/../scripts/lib/core.sh"
 
-sx::require props http modrinth papermc java net yaml mcserver console plugins sexidium store paper velocity report
+sx::require props http modrinth spiget papermc java net yaml mcserver console plugins sexidium store paper velocity report
 
 # Folds the per-node trace parts back into $SX_TRACE, in SX_NODES order.
 #

@@ -5,13 +5,19 @@ forwarding_secret from-env
 write velocity.toml fresh nodes=4
 phase shared-install
 gradle build lobbyWorldZip=assets/worlds/lobbies/Medieval-BreadBuilds.zip menuPack=present
-copy plugins/Sexidium-Paper-1.0.0.jar
+copy plugins/sexidium-paper-26.1.2+16.jar
 download paper.jar <- https://fill-data.papermc.io/v1/objects/1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7/paper-26.1.2-74.jar
 verify_sha256 paper.jar 1d70b1dab9cf4a6de615209a536f3a45a2186240253c428213ce2188ab95e5f7
 download plugins/Multiverse-Core.jar <- https://cdn.modrinth.com/data/3wmN97b8/versions/wvHdu4gu/multiverse-core-5.7.3.jar
 download plugins/FancyNpcs.jar <- https://cdn.modrinth.com/data/EeyAn23L/versions/sEt3BDRu/FancyNpcs-2.11.0%2B370.jar
 download plugins/FancyHolograms.jar <- https://cdn.modrinth.com/data/5QNgOj66/versions/sVWtLhTt/FancyHolograms-2.11.0%2B193.jar
 download plugins/SkinsRestorer.jar <- https://cdn.modrinth.com/data/TsLS8Py5/versions/wXS6bHiC/SkinsRestorer.jar
+download plugins/VaultUnlocked.jar <- https://cdn.modrinth.com/data/ayRaM8J7/versions/cLNipSgw/VaultUnlocked-2.20.2.jar
+download plugins/VeinMiner.jar <- https://cdn.modrinth.com/data/OhduvhIc/versions/qztdh63o/veinminer-paper-2.12.1.jar
+download plugins/InstantRestock.jar <- https://cdn.modrinth.com/data/7pdfxYHV/versions/evMqQmJi/instantrestock_2.6.4.jar
+download plugins/CoreChestsort.jar <- https://api.spiget.org/v2/resources/132579/download
+download plugins/CustomAnvil.jar <- https://cdn.modrinth.com/data/S75Ueiq9/versions/Pq3BQ30n/CustomAnvil-2.1.1.jar
+download plugins/AutoTotem.jar <- https://cdn.modrinth.com/data/X4lEFhAr/versions/nWelNajT/AutoTotem-Plugin-Paper-1.1.2.jar
 install proxy-plugin Sexidium-Velocity-1.0.0.jar
 seed proxy config.yml
 yaml_set proxy/plugins/sexidium/config.yml database.type=mysql

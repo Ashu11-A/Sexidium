@@ -35,6 +35,76 @@ paper::derive_paths() {
     # player heads read, so a friend/party head shows that player's real skin instead of the default Steve.
     SKINSRESTORER_JAR="$PLUGINS_DIR/SkinsRestorer.jar"
 
+    # VaultUnlocked: the economy/permissions BROKER. Nothing in Sexidium calls into it -- Sexidium
+    # registers its own Economy into Bukkit's services manager and every other plugin calls OUT
+    # through Vault to reach it. Optional for that reason: without it the money still works in game,
+    # it is simply invisible to shops and jobs. The jar's plugin.yml declares `name: Vault`.
+    VAULTUNLOCKED_JAR="$PLUGINS_DIR/VaultUnlocked.jar"
+
+    # VeinMiner: quebra a veia inteira num bloco só. Puramente do lado do servidor -- o
+    # `client_side: optional` do Modrinth vale para a versão mod; a build `paper` não pede
+    # nada do cliente, então vale igual para Java e para Bedrock via Geyser.
+    #
+    # O jar declara `api-version: "1.21"`, que o Paper 26.1.2 aceita (recusa é só para uma
+    # api-version MAIOR que a do servidor) -- mesma regra que deixa o jar do Sexidium,
+    # compilado contra o piso, rodar nas duas versões atendidas. Ver minecraft-targets.properties.
+    VEINMINER_JAR="$PLUGINS_DIR/VeinMiner.jar"
+
+    # CoreChestsort: ordenação de baú/inventário por hotkey. Vem do SPIGOTMC (recurso
+    # 132579), não do Modrinth -- é o único plugin desta rede nesse caminho, e é por ele
+    # que lib/spiget.sh existe.
+    #
+    # Os menus do Sexidium NÃO estão em risco, e isso foi verificado no bytecode em vez de
+    # suposto: os listeners dele não declaram EventPriority (logo NORMAL, que roda ANTES do
+    # HIGHEST em que PaperMenuAdapter cancela), mas todo caminho de hotkey passa por
+    # InventoryUtil.isStorageContainer, que exige holder BlockState/DoubleChest (bloco) ou
+    # ChestBoat/StorageMinecart (entidade). Um menu nosso é inventário VIRTUAL e não é
+    # nenhum dos dois, então a ordem das prioridades nunca chega a importar.
+    CORECHESTSORT_JAR="$PLUGINS_DIR/CoreChestsort.jar"
+
+    # InstantRestock: destrava o restock de trade de villager ("infinite trading").
+    #
+    # O NOME DO ARQUIVO É O DO PLUGIN, não o do projeto no Modrinth, e a divergência é
+    # confusa o bastante para registrar: o slug lá é `infinite-villager-trading`, o
+    # plugin.yml diz `name: InstantRestock`, e o comando é /instantrestock (alias
+    # /infinitetrading). O jar leva o nome que o Paper vai imprimir no log.
+    #
+    # Não confundir com o mod `infinite-trading` do Modrinth, que faz a mesma coisa e NÃO
+    # serve aqui: os loaders dele são fabric/forge/neoforge/quilt. Não é questão de versão
+    # -- não existe build Bukkit daquele projeto.
+    INSTANTRESTOCK_JAR="$PLUGINS_DIR/InstantRestock.jar"
+
+    # CustomAnvil: reescreve a mecânica da bigorna. Duas coisas o trouxeram para cá, e as
+    # duas são configuração, não código: acabar com o "Too Expensive!" e acabar com o
+    # desgaste da bigorna. Ver configure_customanvil para o que cada chave faz.
+    #
+    # NÃO PRECISA de ProtocolLib, ao contrário do que o comentário do próprio config.yml
+    # ainda diz. O plugin escolhe o gerador de pacotes em PacketManagerSelector: se
+    # `org.bukkit.craftbukkit.entity.CraftPlayer` existe sem pacote de versão -- o layout
+    # mojang-mapped de todo Paper 1.20.5+ -- ele usa o PaperPacketManager nativo e só cai
+    # no ProtocoLibWrapper nos servidores reobfuscados. Isso importa porque ProtocolLib
+    # não tem build para 26.1.2 (e no SpigotMC é um recurso `external`, que lib/spiget.sh
+    # se recusa a baixar): se o wrapper fosse o único caminho, metade da configuração
+    # abaixo seria inerte.
+    CUSTOMANVIL_JAR="$PLUGINS_DIR/CustomAnvil.jar"
+
+    # AutoTotem: consome um Totem da Imortalidade do INVENTÁRIO quando o golpe seria
+    # fatal, sem exigir que ele esteja na mão ou na offhand. Puramente do lado do
+    # servidor -- o Modrinth marca `client_side: unsupported` -- então vale igual para
+    # Java e para Bedrock via Geyser.
+    #
+    # O jar declara `api-version: '1.20'`, que o Paper 26.1.2 e o 26.2 aceitam (a recusa
+    # é só para uma api-version MAIOR que a do servidor) -- mesma regra que deixa o jar
+    # do Sexidium, compilado contra o piso, rodar nas duas versões atendidas. Ver
+    # minecraft-targets.properties.
+    #
+    # O NOME DO ARQUIVO É O DO PLUGIN, não o do projeto, e a divergência é tripla o
+    # bastante para registrar: o slug do Modrinth é `autototem-plugin`, o arquivo
+    # publicado lá se chama AutoTotem-Plugin-Paper-<versão>.jar, e o plugin.yml diz
+    # `name: AutoTotem`. É esse último que o Paper imprime no log e que nomeia o data
+    # folder plugins/AutoTotem/, então é o nome que o jar leva aqui.
+    AUTOTOTEM_JAR="$PLUGINS_DIR/AutoTotem.jar"
+
     # BetterHud: the only surface that can draw text in the TOP-LEFT corner (vanilla has none — boss bars are
     # top-centre, the action bar bottom-centre, the scoreboard on the right). Death Resets renders its
     # played/days/resets readout there.
@@ -71,7 +141,12 @@ paper::derive_paths() {
 # shellcheck disable=SC2034
 paper::defaults() {
     SERVER_DIR="${SERVER_DIR:-$ROOT_DIR/test/paper}"
-    SEXIDIUM_JAR="${SEXIDIUM_JAR:-$ROOT_DIR/build/libs/paper/Sexidium-Paper-1.0.0.jar}"
+    # O default É o nome canônico derivado da MESMA fonte do build Gradle
+    # (sexidium::paper_jar_name -> minecraft-targets.properties). O nome do jar deixou de
+    # ser uma constante quando ganhou versão do Minecraft e contador por versão; repeti-lo
+    # hardcoded aqui era o jeito garantido de este default e o build discordarem um dia.
+    # Um override continua vencendo -- o pipeline remoto aponta direto para o jar no store.
+    SEXIDIUM_JAR="${SEXIDIUM_JAR:-$ROOT_DIR/build/libs/paper/$(sexidium::paper_jar_name)}"
     # Pinned to 26.1.2 rather than 26.2 ON PURPOSE, and the reason is BetterHud (F62).
     #
     # BetterHud draws its HUD by replacing the client's core text shaders, and picks which set to send from a
@@ -114,6 +189,12 @@ paper::defaults() {
     # test/paper/ is gitignored, so assets/schematics/ is the only place a .schem survives a server wipe.
     SCHEMATICS_SRC="${SCHEMATICS_SRC:-$ROOT_DIR/assets/schematics}"
 
+    # Traduções do AutoTotem versionadas no repo. O jar só embute en-US e zh-CN, e o
+    # MessageManager dele lê QUALQUER .lang que esteja em plugins/AutoTotem/lang/, então
+    # um pt-BR.lang aqui é tudo o que falta para o /autototem falar português. Ver
+    # sync_autototem_lang.
+    AUTOTOTEM_LANG_SRC="${AUTOTOTEM_LANG_SRC:-$ROOT_DIR/assets/lang/autototem}"
+
     # Which Minecraft version the downloaded jars were provisioned for. Everything that fetches a jar
     # short-circuits on "file already exists", so without this a PAPER_VERSION bump would silently keep
     # serving the previous version's jars. See refresh_jars_on_version_change.
@@ -126,6 +207,7 @@ paper::defaults() {
     PAPER_API="https://fill.papermc.io/v3/projects/paper"
     GEYSER_DOWNLOAD_URL="https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
     MODRINTH_API="https://api.modrinth.com/v2"
+    SPIGET_API="https://api.spiget.org/v2"
     # Both APIs ask callers to identify themselves and rate-limit generic agents harder.
     HTTP_UA="${HTTP_UA:-sexidium-init-paper/1.0 (sexidium test-server provisioner)}"
 
@@ -188,6 +270,10 @@ paper::provision() {
     # 3. plugin dependencies (hard deps abort on failure)
     sx_trace "phase plugins"
     ensure_plugins
+    configure_veinminer_groups "$PLUGINS_DIR/Veinminer/groups.json"
+    configure_veinminer_settings "$PLUGINS_DIR/Veinminer/settings.json"
+    configure_customanvil "$PLUGINS_DIR/CustomAnvil/config.yml"
+    configure_autototem "$PLUGINS_DIR/AutoTotem/config.yml"
 
     # 4. warm up once for Geyser's config, then patch it. The warm-up boot also generates Sexidium's
     #    config, so point the menu resource-pack host at the LAN IP now that the file exists.
@@ -235,7 +321,7 @@ paper::start_foreground() {
     cd "$SERVER_DIR" || die "Server directory vanished before start: $SERVER_DIR"
     # Word splitting on $JAVA_ARGS is deliberate: it carries multiple JVM flags.
     # shellcheck disable=SC2086
-    exec "$JAVA_BIN" $JAVA_ARGS -jar "$PAPER_JAR" nogui
+    exec "$JAVA_BIN" $JAVA_ARGS -jar "$(sx_rel "$PAPER_JAR")" nogui
 }
 
 # -----------------------------------------------------------------------------
@@ -417,7 +503,12 @@ paper::stage_build() {
     # Same shape and spirit as paper::link_shared_install's `find … -delete`: a jar left
     # here would be loaded through --add-extra-plugin-dir alongside the pinned one, and
     # Paper refuses a duplicate plugin name -- the node would come up with neither.
-    rm -f "$SX_SHARED_PLUGINS"/Sexidium-Paper-*.jar
+    #
+    # Dois padrões porque o nome do artefato mudou de era ("Sexidium-Paper-1.0.0.jar" ->
+    # "sexidium-paper-<mc>+<n>.jar", ver minecraft-targets.properties) e um globo é
+    # sensível a caixa: um resquício da era velha que sobrasse aqui carregaria junto com
+    # o pino, e o Paper recusaria OS DOIS.
+    rm -f "$SX_SHARED_PLUGINS"/Sexidium-Paper-*.jar "$SX_SHARED_PLUGINS"/sexidium-paper-*.jar
     store::snapshot_deps "$SX_BUILD_ID"
     log "Build $SX_BUILD_ID staged; the shared plugin tree now holds third-party jars only"
 }
@@ -450,7 +541,8 @@ paper::prune_unwanted_shared_jars() {
     # default has to stay "do not silently change what is running".
     [[ "${SX_REFRESH_PLUGINS:-0}" == "1" ]] || return 0
     log "SX_REFRESH_PLUGINS=1: dropping the third-party jars so Modrinth is re-resolved"
-    rm -f "$MULTIVERSE_JAR" "$FANCYNPCS_JAR" "$FANCYHOLOGRAMS_JAR" "$SKINSRESTORER_JAR"
+    rm -f "$MULTIVERSE_JAR" "$FANCYNPCS_JAR" "$FANCYHOLOGRAMS_JAR" "$SKINSRESTORER_JAR" "$VEINMINER_JAR" \
+        "$CORECHESTSORT_JAR" "$INSTANTRESTOCK_JAR" "$CUSTOMANVIL_JAR" "$AUTOTOTEM_JAR"
 }
 
 # paper::drop_jar_unless <wanted:0|1> <jar-path>
@@ -979,6 +1071,13 @@ paper::provision_instance() {
     # symlink.
     store::link_node_plugin_jars "$dir"
     paper::adopt_node_build "$dir" "$name"
+    # O data folder do VeinMiner é DESTE nó (--plugins aponta para cá), então a semente
+    # dos grupos é por nó -- ao contrário do jar, que é um só na árvore compartilhada.
+    # Vale igual para o settings.json ao lado e para o config.yml do CustomAnvil.
+    configure_veinminer_groups "$PLUGINS_DIR/Veinminer/groups.json"
+    configure_veinminer_settings "$PLUGINS_DIR/Veinminer/settings.json"
+    configure_customanvil "$PLUGINS_DIR/CustomAnvil/config.yml"
+    configure_autototem "$PLUGINS_DIR/AutoTotem/config.yml"
 
     local config="$PLUGINS_DIR/Sexidium/config.yml"
     # The pinned build's jar, not the shared tree's: this is the file the node will

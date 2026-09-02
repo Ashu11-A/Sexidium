@@ -1,0 +1,57 @@
+# AutoTotem language file - Português do Brasil (pt-BR)
+# Placeholders: %s (na ordem) ou %1$s, %2$s (por posição)
+# Códigos de cor usam §
+#
+# NÃO VEM DO PLUGIN. O jar só embute en-US e zh-CN, e o MessageManager dele varre
+# plugins/AutoTotem/lang/*.lang, tira o ".lang" e NORMALIZA o nome do arquivo
+# (toLowerCase + '_' -> '-'). Um cliente em português manda `pt_br`, que normaliza
+# para o mesmo `pt-br` deste arquivo -- e essa igualdade é a única coisa que liga um
+# ao outro. Renomear o arquivo desliga a tradução em silêncio: quem não casa cai no
+# `default-locale` do config.yml, que é en-US.
+#
+# UTF-8, com acento. O loader lê por Files.readAllLines(..., StandardCharsets.UTF_8)
+# e a fonte padrão do Minecraft cobre o Latin-1 Supplement inteiro, então "configuração"
+# chega no chat como está escrito aqui.
+#
+# As chaves são as do en-US.lang embutido, e têm que ser TODAS: o resolve() não tem
+# fallback por chave, só por locale. Uma chave que falte aqui vira mensagem vazia para o
+# jogador brasileiro, não a versão em inglês dela.
+
+# Logs de enable/disable do plugin
+plugin-enabled=AutoTotem foi habilitado. Versão:
+plugin-disabled=AutoTotem foi desabilitado. Versão:
+
+# Geral
+command-only-player=Este comando só pode ser executado por jogadores
+
+# subcomando enabled
+enabled-query=§eStatus do AutoTotem: %s
+enabled-status-on=§aLIGADO
+enabled-status-off=§cDESLIGADO
+enabled-usage=§7Use /autototem enabled true | false para alternar
+enabled-true=§aAutoTotem ligado
+enabled-false=§cAutoTotem desligado
+enabled-invalid=§cArgumento inválido, use true ou false
+
+# subcomando cooldowntime
+cooldown-query=§eCooldown atual: §a%1$s tick§e (%2$s segundos)
+cooldown-negative=§cO cooldown não pode ser negativo
+cooldown-set=§aCooldown ajustado para §e%1$s tick§a (%2$s segundos)
+cooldown-invalid=§cArgumento inválido, informe um número inteiro (ticks)
+cooldown-below-default=§cO cooldown não pode ser menor que o padrão do servidor §e%1$s tick§c (%2$s segundos)
+
+# subcomando setdefaultcooldown
+default-cooldown-query=§eCooldown padrão do servidor: §a%1$s tick§e (%2$s segundos)
+default-cooldown-set=§aCooldown padrão do servidor ajustado para §e%1$s tick§a (%2$s segundos)
+
+# subcomando reload
+reload-success=§aConfiguração recarregada
+reload-no-permission=§cVocê não tem permissão para usar este comando (precisa ser OP)
+
+# Ajuda
+help-header=§6========== Ajuda do AutoTotem ==========
+help-enabled=§e/autototem enabled true | false §7- Liga/desliga o totem automático
+help-cooldown=§e/autototem cooldowntime [tick] §7- Vê/ajusta o cooldown de disparo (20 ticks = 1 segundo)
+help-setdefault=§e/autototem setdefaultcooldown [tick] §7- Vê/ajusta o cooldown padrão do servidor (admin)
+help-reload=§e/autototem reload §7- Recarrega o arquivo de configuração
+help-help=§e/autototem help §7- Mostra a ajuda

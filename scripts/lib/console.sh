@@ -48,7 +48,8 @@ warmup_for_geyser_config() {
     # fd 9 keeps the write end open -> server's stdin never hits EOF.
     exec 9<>"$CONSOLE_FIFO"
 
-    (cd "$SERVER_DIR" && exec "$JAVA_BIN" $JAVA_ARGS -jar "$PAPER_JAR" nogui <"$CONSOLE_FIFO" >/dev/null 2>&1) &
+    (cd "$SERVER_DIR" && exec "$JAVA_BIN" $JAVA_ARGS -jar "$(sx_rel "$PAPER_JAR")" nogui \
+        <"$(sx_rel "$CONSOLE_FIFO")" >/dev/null 2>&1) &
     WARMUP_PID=$!
 
     local i ready=0

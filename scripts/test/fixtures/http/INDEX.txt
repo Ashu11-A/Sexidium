@@ -12,3 +12,9 @@ cc0f441c7b40bff25e1381c3f16823305f39cb16	https://api.modrinth.com/v2/project/mul
 213a251a516c90cee6e707a391f882b5024fe293	https://api.modrinth.com/v2/project/fancynpcs/version?loaders=%5B%22paper%22%5D
 a331e018d38fea72de2b80b5252d26b42cbdcdca	https://api.modrinth.com/v2/project/fancyholograms/version?loaders=%5B%22paper%22%5D
 8bc650b7cca1162e2b95e8b7a53708e6d037db7f	https://api.modrinth.com/v2/project/skinsrestorer/version?loaders=%5B%22paper%22%5D
+36e6e49a414fb01566043f4ac2b921ed9884ec3d	https://api.modrinth.com/v2/project/veinminer/version?loaders=%5B%22paper%22%5D
+38216164cc2c0a00251b8c3033e2f3f7b5627a14	https://api.modrinth.com/v2/project/vaultunlocked/version?loaders=%5B%22paper%22%5D
+41660afb8b8786fe5ee1408648d31a395d83717d	https://api.modrinth.com/v2/project/autototem-plugin/version?loaders=%5B%22paper%22%5D
+68166b755a39d7b6e6d47421957761eb44f04a88	https://api.modrinth.com/v2/project/customanvil/version?loaders=%5B%22paper%22%5D
+6c8281890a46344fdca92b6bb445e41e4803146a	https://api.modrinth.com/v2/project/infinite-villager-trading/version?loaders=%5B%22paper%22%5D
+b5556ca4b8a63be97b9452c0483086753d31b58f	https://api.spiget.org/v2/resources/132579

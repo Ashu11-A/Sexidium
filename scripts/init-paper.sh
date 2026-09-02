@@ -29,7 +29,7 @@ SX_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=lib/core.sh
 . "$SX_SCRIPT_DIR/lib/core.sh"
 
-sx::require props http modrinth papermc java net mcserver console plugins sexidium paper report
+sx::require props http modrinth spiget papermc java net mcserver console plugins sexidium paper report
 
 main() {
     # defaults first: paper::provision's own preflight probes "$JAVA_BIN".

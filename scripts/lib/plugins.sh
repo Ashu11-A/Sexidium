@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
 # lib/plugins.sh -- Third-party plugin installation and configuration
-#   (Geyser, Multiverse, FancyNpcs/Holograms, SkinsRestorer, FAWE, Axiom, BetterHud).
+#   (Geyser, Multiverse, FancyNpcs/Holograms, SkinsRestorer, VeinMiner, InstantRestock,
+#    CoreChestsort, CustomAnvil, FAWE, Axiom, BetterHud).
 #
 # Sourced by scripts/init-*.sh via lib/core.sh's sx::require. Libraries never set
 # shell options and never install traps: they inherit `set -Eeuo pipefail` from
@@ -18,6 +19,8 @@ _SX_LIB_PLUGINS=1
 # repo patches -- see configure_skinsrestorer_config for why a hand-rolled awk is not an
 # acceptable substitute for one that quotes its values.
 sx::require yaml
+# CoreChestsort vem do SpigotMC; ensure_spiget_plugin mora aqui.
+sx::require spiget
 
 # -----------------------------------------------------------------------------
 # Plugin dependencies
@@ -66,6 +69,37 @@ ensure_plugins() {
     ensure_modrinth_plugin "fancyholograms" "$FANCYHOLOGRAMS_JAR" "FancyHolograms"
     # Optional: SkinsRestorer powers /skin (offline/LAN safe) and feeds the chest-GUI player-head skins.
     ensure_modrinth_plugin "skinsrestorer" "$SKINSRESTORER_JAR" "SkinsRestorer"
+    # Optional: VaultUnlocked is the broker other plugins read Sexidium's money THROUGH. Nothing in
+    # Sexidium calls into it -- Sexidium is the provider, VaultUnlocked's own jar has no economy at
+    # all -- so a node without it keeps working /pay, /balance and the sidebar balance, and only
+    # shops and jobs lose sight of the balances. Its Modrinth slug is "vaultunlocked" while the
+    # installed plugin names itself "Vault".
+    ensure_modrinth_plugin "vaultunlocked" "$VAULTUNLOCKED_JAR" "VaultUnlocked" optional release
+    # Optional: VeinMiner. Nada no Sexidium chama para dentro dele -- é um plugin de
+    # jogabilidade que ouve o BlockBreakEvent -- então um nó sem ele perde a mecânica e
+    # mais nada. `release` pelo mesmo motivo do Multiverse: nada re-resolve um "latest" do
+    # Modrinth depois que o jar existe, então a build que uma árvore recebe é decidida pelo
+    # DIA em que ela foi provisionada, e uma beta que caísse nesse dia ficaria congelada ali.
+    ensure_modrinth_plugin "veinminer" "$VEINMINER_JAR" "VeinMiner" optional release
+    # Optional: destrava o restock de trade de villager. Nada no Sexidium chama para dentro
+    # dele; um nó sem ele volta ao restock vanilla e mais nada.
+    ensure_modrinth_plugin "infinite-villager-trading" "$INSTANTRESTOCK_JAR" "InstantRestock" optional release
+    # Optional, e pelo caminho do SPIGOTMC -- ver lib/spiget.sh para por que ele não pode
+    # ser um ensure_modrinth_plugin. Sem resolução por versão de Minecraft: o que vem é o
+    # arquivo mais recente do recurso 132579.
+    ensure_spiget_plugin 132579 "$CORECHESTSORT_JAR" "CoreChestsort" optional
+    # Optional: bigorna sem "Too Expensive!" e sem desgaste. Nada no Sexidium chama para
+    # dentro dele -- ele ouve PrepareAnvilEvent/InventoryClickEvent -- então um nó sem ele
+    # volta à bigorna vanilla e mais nada. `release` pela mesma razão dos outros: nada
+    # re-resolve um "latest" depois que o jar existe, e o canal `alpha` deste projeto é uma
+    # esteira de builds `dev-<sha>` que ninguém quer congelada num nó.
+    ensure_modrinth_plugin "customanvil" "$CUSTOMANVIL_JAR" "CustomAnvil" optional release
+    # Optional: totem automático a partir do inventário. Nada no Sexidium chama para dentro
+    # dele -- ele ouve o EntityDamageEvent e cancela o dano fatal -- então um nó sem ele volta
+    # ao totem vanilla (só mão/offhand) e mais nada. `release` pela mesma razão dos outros, e
+    # aqui a diferença é grande: o outro canal publicado deste projeto é um `1.0-SNAPSHOT`
+    # alpha que só lista Minecraft 1.20/1.20.1, ou seja, um jar que nem carregaria aqui.
+    ensure_modrinth_plugin "autototem-plugin" "$AUTOTOTEM_JAR" "AutoTotem" optional release
     configure_skinsrestorer_offline_skins
     # BetterHud draws the Death Resets corner readout — the one surface Minecraft has no vanilla
     # equivalent for. Installed whenever the pinned Minecraft version is one its shader overlay actually
@@ -94,6 +128,329 @@ ensure_plugins() {
     # run (or an operator) already put there, and an unneutralised one still ships its shader pack.
     neutralise_betterhud_pack_if_present
     ensure_world_editors
+}
+
+# configure_veinminer_groups <groups.json>
+#
+# SEMEIA os grupos de veia de um nó que ainda não tem nenhum, e NUNCA toca num arquivo que
+# já existe. As duas metades importam:
+#
+#   semear  O plugin, sozinho, escreve UM grupo: "Ores" (#c:ores + #minecraft:pickaxes).
+#           Árvore não está lá, então "instalar o VeinMiner" nunca significou derrubar
+#           árvore -- é preciso dizer. `Logs` é o preset do próprio plugin (troncos +
+#           cogumelo gigante); `Leaves` NÃO é: o preset de folha dele pede
+#           #minecraft:hoes/shears, que não dispara com o machado que já está na mão de
+#           quem está cortando. Folha não exige ferramenta correta em vanilla
+#           (requiresCorrectToolForDrops = false), então needCorrectTool não a bloqueia.
+#
+#   nunca sobrescrever  Este arquivo é EDITÁVEL EM JOGO (`/veinminer`, permissão
+#           veinminer.groups) e é estado do nó, não configuração derivada do repo.
+#           Reescrevê-lo a cada provisionamento apagaria em silêncio o ajuste de quem
+#           está operando o servidor -- que é exatamente o tipo de coisa que só se
+#           descobre depois, sem nada no log a que voltar.
+#
+# Um nó JÁ NO AR não converge por aqui, e isso é de propósito: o data folder dele já tem o
+# arquivo. Convergir os que estão de pé é uma ação deliberada (escrever o arquivo nos nós +
+# `veinminer reload` pela API), não um efeito colateral de reprovisionar.
+configure_veinminer_groups() {
+    local config="$1"
+    # Sem o jar não há plugin para ler isto. O caminho difere entre os dois layouts: no
+    # servidor único o jar está no próprio plugins/; na rede ele mora na árvore
+    # compartilhada e cada nó o alcança por um symlink em pluginjars/.
+    [[ -s "$VEINMINER_JAR" || -s "${SX_SHARED_PLUGINS:-}/VeinMiner.jar" ]] || return 0
+    if [[ -e "$config" ]]; then
+        log "VeinMiner: $config já existe; preservado"
+        return 0
+    fi
+    mkdir -p "$(dirname "$config")"
+    log "VeinMiner: semeando grupos (Ores + Logs + Leaves) -> $config"
+    cat >"$config" <<'VEINMINER_GROUPS'
+[
+    {
+        "name": "Ores",
+        "blocks": [
+            "#c:ores"
+        ],
+        "tools": [
+            "#minecraft:pickaxes"
+        ],
+        "override": {
+            "cooldown": null,
+            "mustSneak": null,
+            "delay": null,
+            "maxChain": null,
+            "needCorrectTool": null,
+            "searchRadius": null,
+            "permissionRestricted": null,
+            "decreaseDurability": null,
+            "hungerPerBlock": null,
+            "miningSpeedModifier": null,
+            "separateGroupMining": null
+        }
+    },
+    {
+        "name": "Logs",
+        "blocks": [
+            "#minecraft:logs",
+            "minecraft:mushroom_stem",
+            "minecraft:brown_mushroom_block",
+            "minecraft:red_mushroom_block"
+        ],
+        "tools": [
+            "#minecraft:axes"
+        ],
+        "override": {
+            "cooldown": null,
+            "mustSneak": null,
+            "delay": null,
+            "maxChain": null,
+            "needCorrectTool": null,
+            "searchRadius": null,
+            "permissionRestricted": null,
+            "decreaseDurability": null,
+            "hungerPerBlock": null,
+            "miningSpeedModifier": null,
+            "separateGroupMining": null
+        }
+    },
+    {
+        "name": "Leaves",
+        "blocks": [
+            "#minecraft:leaves"
+        ],
+        "tools": [
+            "#minecraft:axes"
+        ],
+        "override": {
+            "cooldown": null,
+            "mustSneak": null,
+            "delay": null,
+            "maxChain": null,
+            "needCorrectTool": null,
+            "searchRadius": null,
+            "permissionRestricted": null,
+            "decreaseDurability": null,
+            "hungerPerBlock": null,
+            "miningSpeedModifier": null,
+            "separateGroupMining": null
+        }
+    }
+]
+VEINMINER_GROUPS
+}
+
+# configure_veinminer_settings <settings.json>
+#
+# Semeia os ajustes GLOBAIS do VeinMiner, e existe por uma chave só: mustSneak.
+#
+# A hierarquia importa. Cada grupo em groups.json carrega um bloco `override` cujos campos
+# são todos `null`, e `null` quer dizer "herda daqui". Então este arquivo é o único lugar
+# onde "só funciona agachado" pode ser dito uma vez e valer para Ores, Logs e Leaves.
+#
+# O ARQUIVO É ESCRITO INTEIRO, não só a chave que nos interessa, e isso é deliberado. O
+# plugin desserializa este JSON com kotlinx.serialization e, quando a leitura falha, o
+# BaseConfigManager NÃO aborta: ele registra o erro e segue com a configuração PADRÃO. Um
+# arquivo parcial que deixasse de parsear voltaria mustSneak para false sem nada quebrar --
+# a falha apareceria como "o veinminer voltou a disparar sozinho", meses depois. Os valores
+# abaixo são os defaults do próprio plugin, copiados do settings.json que ele gerou, com
+# mustSneak virado.
+#
+# Semeia e nunca sobrescreve, pela mesma razão de configure_veinminer_groups: `/veinminer
+# settings` (permissão veinminer.settings) edita este arquivo em jogo. Convergir um nó que
+# já está de pé é ação deliberada -- escrever o arquivo e chamar `veinminer reload` --, não
+# efeito colateral de reprovisionar.
+configure_veinminer_settings() {
+    local config="$1"
+    [[ -s "$VEINMINER_JAR" || -s "${SX_SHARED_PLUGINS:-}/VeinMiner.jar" ]] || return 0
+    if [[ -e "$config" ]]; then
+        log "VeinMiner: $config já existe; preservado"
+        return 0
+    fi
+    mkdir -p "$(dirname "$config")"
+    log "VeinMiner: semeando ajustes globais (mustSneak=true) -> $config"
+    cat >"$config" <<'VEINMINER_SETTINGS'
+{
+    "cooldown": 20,
+    "mustSneak": true,
+    "delay": 0,
+    "maxChain": 100,
+    "needCorrectTool": true,
+    "searchRadius": 1,
+    "permissionRestricted": false,
+    "mergeItemDrops": false,
+    "autoUpdate": false,
+    "decreaseDurability": true,
+    "hungerPerBlock": 0.0,
+    "miningSpeedModifier": 0.0,
+    "separateGroupMining": false,
+    "dontDisplayUpdatesAndIWillNotAskForSupportBeforeUpdatingISwear": false,
+    "debug": false,
+    "client": {
+        "allow": true,
+        "require": false,
+        "translucentBlockHighlight": true,
+        "allBlocks": false,
+        "overrides": {
+            "cooldown": null,
+            "mustSneak": null,
+            "delay": null,
+            "maxChain": null,
+            "needCorrectTool": null,
+            "searchRadius": null,
+            "permissionRestricted": null,
+            "decreaseDurability": null,
+            "hungerPerBlock": null,
+            "miningSpeedModifier": null,
+            "separateGroupMining": null
+        }
+    }
+}
+VEINMINER_SETTINGS
+}
+
+# configure_customanvil <config.yml>
+#
+# Três chaves, e as três são a razão de o plugin estar instalado:
+#
+#   remove_repair_limit    Tira o TETO de custo. Sem ela a bigorna se recusa a concluir
+#                          qualquer trabalho de 40 níveis ou mais -- o "Too Expensive!"
+#                          não é só um texto, é uma parede.
+#   replace_too_expensive  Tira o TEXTO. As duas são necessárias e nenhuma basta: o cliente
+#                          vanilla decide desenhar "Too Expensive!" sozinho, com
+#                          `custo >= 40 && !abilities.instabuild` -- um teste que o servidor
+#                          não alcança por setMaximumRepairCost. O plugin contorna mandando
+#                          um ClientboundPlayerAbilitiesPacket com instabuild=true enquanto
+#                          essa tela está aberta, e é SÓ isso que apaga o texto. Ele repõe
+#                          o valor verdadeiro assim que o custo cai abaixo de 40.
+#   anvil_degradation      Chance de a bigorna se danificar a cada uso. Zero = ela nunca
+#                          lasca, nunca quebra, nunca precisa ser reposta.
+#
+# ESCRITO COMO `0`, INTEIRO, e não como `0.0`. yamlkv só deixa sem aspas o que casa com
+# bool/int/null (ver scalar() em lib/py/yamlkv.py); `0.0` sairia como a STRING '0.0', e
+# FileConfiguration.getDouble devolve o DEFAULT quando o valor não é um Number -- ou seja,
+# a bigorna continuaria se desgastando a 0.12 e o arquivo diria que não. Um `0` sem aspas
+# chega como Integer e getDouble o converte.
+#
+# CONVERGE A CADA PROVISIONAMENTO, ao contrário do VeinMiner ao lado, e a diferença é o que
+# cada arquivo É. O settings.json do VeinMiner é inteiro do operador; aqui são três chaves
+# entre duzentas linhas que continuam sendo dele. Quem mudar estas três pelo `/ca` (permissão
+# ca.config.edit) as vê voltarem no próximo provision -- é o mesmo trato do
+# configure_skinsrestorer_config, e é o preço de a política morar no repo.
+configure_customanvil() {
+    local config="$1" jar="$CUSTOMANVIL_JAR"
+    [[ -s "$jar" ]] || jar="${SX_SHARED_PLUGINS:-}/CustomAnvil.jar"
+    [[ -s "$jar" ]] || return 0
+    mkdir -p "$(dirname "$config")"
+    # O plugin só escreve o config.yml no primeiro enable, e yaml::set exige um arquivo que
+    # já exista -- sem esta semente as três chaves só entrariam em vigor no SEGUNDO restart
+    # depois da instalação. Extrair do próprio jar (em vez de versionar uma cópia aqui) é o
+    # que mantém as outras ~200 linhas iguais às da versão que está instalada; é o mesmo
+    # caminho de sexidium::extract_default_config, e por python3, que yaml::set já exige --
+    # `unzip` não existe garantidamente na imagem de provisionamento.
+    if [[ ! -f "$config" ]]; then
+        need_cmd python3
+        if python3 - "$jar" "$config" <<'PY_EXTRACT'
+import shutil, sys, zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as jar, open(sys.argv[2], "wb") as out:
+    with jar.open("config.yml") as src:
+        shutil.copyfileobj(src, out)
+PY_EXTRACT
+        then
+            log "CustomAnvil: config.yml padrão extraído do jar -> $config"
+        else
+            rm -f "$config"
+            log "CustomAnvil: não consegui extrair o config.yml de $jar; o plugin escreve o dele"
+            log "  no primeiro boot e as chaves entram no provisionamento seguinte"
+            return 0
+        fi
+    fi
+    yaml::set "$config" \
+        remove_repair_limit true \
+        replace_too_expensive true \
+        anvil_degradation 0
+}
+
+# configure_autototem <config.yml>
+#
+# As quatro chaves do plugin, escritas por inteiro. Não há aqui a divisão "semeia e nunca
+# toca" do VeinMiner: nenhuma delas é editável em jogo -- `/autototem enabled` e
+# `/autototem cooldowntime` escrevem o estado POR JOGADOR, num arquivo à parte, e o único
+# comando que mexe neste config.yml é o `setdefaultcooldown` (autototem.admin). Então este
+# arquivo é política do repo, e converge a cada provisionamento como o do CustomAnvil.
+#
+# `pvp-enabled: true` é uma DECISÃO, não o default herdado, e é a única das quatro que muda
+# o resultado de uma partida: com ela ligada o totem também dispara em dano letal causado
+# por outro jogador, o que inclui o minigame Combat/KitPvP, cujo vencedor é justamente o
+# último sobrevivente. Quem quiser o inverso -- totem automático só contra queda, lava, mob
+# e void -- troca por `false` aqui, e não em cada nó.
+#
+# `default-cooldown-ticks: 0` é o piso do servidor, não um teto: o plugin recusa um
+# `/autototem cooldowntime` ABAIXO do padrão (cooldown-below-default), então 0 é o que deixa
+# cada jogador escolher o próprio cooldown para cima. Subir este número tira essa escolha.
+#
+# `default-locale` só entra em cena para um cliente cujo idioma não tem .lang na pasta; os
+# que têm resolvem sozinhos. Ver sync_autototem_lang para o pt-BR.
+configure_autototem() {
+    local config="$1" jar="$AUTOTOTEM_JAR"
+    [[ -s "$jar" ]] || jar="${SX_SHARED_PLUGINS:-}/AutoTotem.jar"
+    [[ -s "$jar" ]] || return 0
+    mkdir -p "$(dirname "$config")"
+    # Mesmo motivo do configure_customanvil: o plugin só escreve o config.yml no primeiro
+    # enable, e yaml::set exige um arquivo que já exista -- sem esta semente as chaves só
+    # entrariam em vigor no SEGUNDO restart depois da instalação. Extrair do próprio jar é o
+    # que mantém os comentários do arquivo iguais aos da versão instalada.
+    if [[ ! -f "$config" ]]; then
+        need_cmd python3
+        if python3 - "$jar" "$config" <<'PY_EXTRACT'
+import shutil, sys, zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as jar, open(sys.argv[2], "wb") as out:
+    with jar.open("config.yml") as src:
+        shutil.copyfileobj(src, out)
+PY_EXTRACT
+        then
+            log "AutoTotem: config.yml padrão extraído do jar -> $config"
+        else
+            rm -f "$config"
+            log "AutoTotem: não consegui extrair o config.yml de $jar; o plugin escreve o dele"
+            log "  no primeiro boot e as chaves entram no provisionamento seguinte"
+            return 0
+        fi
+    fi
+    yaml::set "$config" \
+        default-enabled true \
+        default-cooldown-ticks 0 \
+        pvp-enabled true \
+        default-locale en-US
+    sync_autototem_lang "$(dirname "$config")/lang"
+}
+
+# sync_autototem_lang <plugins/AutoTotem/lang>
+#
+# Repo -> nó, e SEM a regra "só se for mais novo" do sync_schematics, porque os dois arquivos
+# não são a mesma coisa. Um .schem pode ser reescrito em jogo por `//schem save` e aí o disco
+# é a versão boa; um .lang não tem caminho de escrita nenhum dentro do servidor, então a
+# versão do repo é a única que existe e sobrescrever é o comportamento correto -- é assim que
+# uma correção de tradução chega aos quatro nós no provisionamento seguinte.
+#
+# Os .lang do PRÓPRIO plugin (en-US, zh-CN) não passam por aqui: ele os escreve sozinho no
+# enable, via saveResource, e o glob abaixo só alcança o que está em assets/lang/autototem/.
+sync_autototem_lang() {
+    local dest="$1"
+    [[ -d "${AUTOTOTEM_LANG_SRC:-}" ]] || return 0
+
+    local copied=0 file
+    shopt -s nullglob
+    for file in "$AUTOTOTEM_LANG_SRC"/*.lang; do
+        mkdir -p "$dest"
+        cp "$file" "$dest/$(basename "$file")"
+        copied=$((copied + 1))
+    done
+    shopt -u nullglob
+
+    ((copied > 0)) && log "AutoTotem: $copied arquivo(s) de idioma sincronizado(s) -> $dest"
+    return 0
 }
 
 # The two map-editing plugins. Optional on purpose: a failed download costs a warning, never the boot —
