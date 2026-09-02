@@ -30,6 +30,42 @@ class BetterHudAssetCompilerTest {
       .text("resets", LocalizedText.of(MessageKey.EXPERIENCE_DEATHRESETS_RESETS))
       .build();
 
+  /**
+   * Every text object asks BetterHud to parse the published line's ampersand codes. That switch is
+   * what lets ONE row carry more than one colour — a green tick beside a dimmed label — and it is
+   * paired with {@code BetterHudRows}, which serializes to exactly this dialect. Drop either half and
+   * the readouts do not break loudly: they either lose every colour a template declared, or start
+   * printing raw {@code &a} at the player.
+   */
+  @Test
+  void everyRowAsksForTheLineToBeParsedForColour() {
+    String layout = BetterHudAssetCompiler.compile(THREE_ROWS).get("layouts/sexidium/deathresets.yml");
+
+    assertEquals(3, countOf(layout, "use-legacy-format: true"),
+        "one per row, or a row silently loses its colours");
+    assertEquals(3, countOf(layout, "legacy-serializer: ampersand"),
+        "the dialect has to be named, or BetterHud falls back to the operator's global config");
+  }
+
+  /**
+   * The declared colour survives alongside it, and that is not redundancy. It is what a span carrying
+   * no code of its own is drawn in — which is every span of every template that declares no colour.
+   */
+  @Test
+  void theDeclaredColourIsStillWrittenAsTheFloor() {
+    String layout = BetterHudAssetCompiler.compile(THREE_ROWS).get("layouts/sexidium/deathresets.yml");
+
+    assertEquals(3, countOf(layout, "color: \"white\""));
+  }
+
+  private static int countOf(String haystack, String needle) {
+    int count = 0;
+    for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+      count++;
+    }
+    return count;
+  }
+
   @Test
   void compilesOneLayoutAndOneHudPerSurface() {
     Map<String, String> files = BetterHudAssetCompiler.compile(THREE_ROWS);

@@ -8,7 +8,7 @@ import com.sexidium.core.platform.PlayerAdapter;
 import com.sexidium.core.platform.hud.HudElement;
 import com.sexidium.core.platform.hud.HudSurfaceSpec;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,13 +23,35 @@ import java.util.function.Supplier;
  * can, because the map is per player: the same row is rendered separately for each viewer, in that
  * viewer's language, and written only into their map. The generated yml holds no words at all.
  *
- * <h2>Why plain text, not MiniMessage</h2>
- * Our templates are MiniMessage and BetterHud would draw the tags literally. Deserializing and then
- * flattening gives it the words without the markup; colour comes from the generated layout's own
- * {@code color} key. Some styling is genuinely lost, which is the honest trade for a surface that
- * draws through a font atlas rather than through the chat component pipeline.
+ * <h2>Legacy codes, not plain text — and not MiniMessage either</h2>
+ * This used to flatten every line to plain text on the belief that BetterHud would draw markup
+ * literally, which cost a template every colour it declared and is why a row's colour had to be
+ * declared a second time on the spec. It is only half true. {@code TextRenderer#parseToComponent}
+ * resolves the placeholder's value FIRST and parses the result — with {@code Component.text} (so
+ * MiniMessage tags really would be literal), or, when the text object sets {@code use-legacy-format},
+ * with a legacy serializer. {@link BetterHudAssetCompiler} sets it, so the line is rendered here to
+ * ampersand codes and BetterHud rebuilds the runs of colour from them.
+ *
+ * <p>So <b>colour survives per span</b> — a green tick beside a dimmed label is one row, not two.
+ * <b>Decorations still do not.</b> Nothing in the plugin references Adventure's {@code TextDecoration};
+ * the renderer reads {@code color()} and nothing else, so a {@code <strikethrough>} is parsed, ignored
+ * and dropped. That is the honest remaining cost of drawing through a font atlas, and it is why a
+ * consumer that needs "done" to read as done says so with a glyph as well as with a colour.</p>
+ *
+ * <p>A row the publisher has <em>blanked</em> ({@link HudValues#blanked}) is published as the empty
+ * string rather than skipped: BetterHud renders a variable it cannot find as the literal
+ * {@code <none>}, so "show nothing here" has to be said out loud.</p>
  */
 final class BetterHudRows {
+  /**
+   * Ampersand, matching the {@code legacy-serializer} the compiler writes. Colour-only by
+   * construction: the renderer on the other side reads nothing else, so emitting decoration codes
+   * would only be noise in a string a human may have to read out of a bug report.
+   */
+  private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.builder()
+      .character(LegacyComponentSerializer.AMPERSAND_CHAR)
+      .build();
+
   private final Supplier<MessageService> messageService;
 
   BetterHudRows(Supplier<MessageService> messageService) {
@@ -58,7 +80,7 @@ final class BetterHudRows {
       if (key == null) {
         continue;
       }
-      String line = flatten(values.render(element), language);
+      String line = values.blanked(key) ? "" : flatten(values.render(element), language);
       if (element instanceof HudElement.PulseRow pulse) {
         publishPulse(rendered, spec, pulse, line, nowMillis - values.changedAt(key));
         continue;
@@ -124,6 +146,10 @@ final class BetterHudRows {
     }
   }
 
+  /**
+   * Renders one line for a viewer into the ampersand-coded form the generated layout is configured to
+   * parse. See the class doc: colour survives, decorations do not.
+   */
   private String flatten(LocalizedText line, Language language) {
     if (line == null) {
       return "";
@@ -134,8 +160,7 @@ final class BetterHudRows {
         return "";
       }
       String mini = service.renderMini(language == null ? Language.EN : language, line);
-      return PlainTextComponentSerializer.plainText()
-          .serialize(MiniMessage.miniMessage().deserialize(mini));
+      return LEGACY.serialize(MiniMessage.miniMessage().deserialize(mini));
     } catch (RuntimeException | LinkageError ignored) {
       // A malformed template costs one row, not the surface: every other row still publishes.
       return "";

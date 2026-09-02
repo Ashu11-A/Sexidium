@@ -53,6 +53,14 @@ import java.util.Map;
  * <p>Each frame is lifted by half the height it gained, so the number swells around a fixed centre
  * instead of growing downwards out of its own top edge.</p>
  *
+ * <h2>Colour comes from the line, with the declaration as the floor</h2>
+ * Each text object sets {@code use-legacy-format: true} and {@code legacy-serializer: ampersand}, and
+ * {@link BetterHudRows} publishes ampersand-coded lines. {@code TextRenderer#parseToComponent} resolves
+ * the placeholder and then runs the legacy serializer over the result, so the runs of colour a template
+ * declared survive into the atlas. {@code color} is still written and still matters: it is what a span
+ * carrying no code of its own is drawn in. Decorations are a different story — the renderer reads
+ * {@code color()} and nothing else, so a strikethrough is parsed and thrown away.
+ *
  * <h2>One variable per row</h2>
  * Every row's pattern is a single {@code [string:sexidium_<surface>_<key>]} lookup into the viewer's
  * own {@code HudPlayer#getVariableMap()}, which the driver fills with the WHOLE rendered line — label
@@ -247,6 +255,14 @@ public final class BetterHudAssetCompiler {
         // MiniMessage was flattened away before BetterHud ever saw it (see BetterHudRows). The
         // declaration names it; a declaration that names none still says white, as every row used to.
         .append("      color: \"").append(color).append("\"\n")
+        // Makes BetterHud parse the published line's ampersand codes instead of taking it as one flat
+        // string, which is what lets ONE row carry more than one colour — a green tick beside a dimmed
+        // label. Set per text object rather than left to BetterHud's global config, because that config
+        // belongs to the operator and this is a promise the driver has to be able to keep on its own.
+        // `color` above is not redundant: it is what an uncoloured span falls back to, which is every
+        // span in every template that declares no colour of its own.
+        .append("      use-legacy-format: true\n")
+        .append("      legacy-serializer: ampersand\n")
         .append("      x: 0\n")
         // Positive y is DOWN. See the class doc.
         .append("      y: ").append(offsetY).append('\n');

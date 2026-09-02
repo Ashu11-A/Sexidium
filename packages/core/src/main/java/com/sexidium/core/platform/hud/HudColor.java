@@ -5,17 +5,26 @@ import java.util.Locale;
 /**
  * The colour a text element is drawn in.
  *
- * <h2>Why a spec has to say this at all</h2>
+ * <h2>What this is now: the floor, not the whole story</h2>
  * A row's words come from a {@link com.sexidium.core.i18n.LocalizedText} template, and those templates
  * are MiniMessage — so a countdown that wants to be red says {@code <red>} in the lang file and every
  * driver that renders through the chat component pipeline (the vanilla title, the scoreboard sidebar)
- * obeys it. An overlay driver cannot: BetterHud draws through a font atlas, so its renderer flattens
- * the template to plain text and takes the colour from the generated layout's own {@code color} key.
- * With nothing to fill that key from it wrote white, and one declaration came out red on one surface
- * and white on the other — which is exactly what "two counters" looks like when both halves draw.
+ * obeys it. The overlay driver used to be unable to: it flattened the template to plain text and took
+ * the colour from the generated layout's own {@code color} key, so one declaration came out red on one
+ * surface and white on the other.
  *
- * <p>So the colour is declared here, beside the row, where BOTH renderers can read it. The tags in the
- * lang file stay: they are what the component pipeline uses, and they must agree with this.</p>
+ * <p>That half is fixed. The generated layout sets {@code use-legacy-format} and the publisher
+ * serializes each line to ampersand codes, so BetterHud rebuilds the runs of colour a template
+ * declared — which is also what lets ONE row carry two colours, a green tick beside a dimmed label.</p>
+ *
+ * <p>This stays, and is still load-bearing, as the colour a span carrying no code of its own is drawn
+ * in — which is every span of every template that declares none. Declare it to match what the template
+ * says, or leave it at {@link #DEFAULT} when the template colours itself throughout.</p>
+ *
+ * <p><b>Decorations are still lost on the overlay.</b> Nothing in BetterHud references Adventure's
+ * {@code TextDecoration}; its renderer reads {@code color()} and nothing else, so a
+ * {@code <strikethrough>} is parsed and dropped. A consumer that needs "done" to read as done says it
+ * with a glyph as well as with a colour.</p>
  *
  * <p>The names are Adventure's {@code NamedTextColor} names, which is what makes {@link #id()} valid
  * both as a MiniMessage tag and as a value a platform overlay can parse.</p>
