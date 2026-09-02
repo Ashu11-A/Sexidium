@@ -1,6 +1,7 @@
 package com.sexidium.paper.adapter.player;
 
 import com.sexidium.core.platform.BedrockPlayers;
+import com.sexidium.paper.adapter.util.PlatformProbes;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
@@ -192,7 +193,11 @@ public final class PaperGeyser {
           floodgateSendForm = apiClass.getMethod("sendForm", UUID.class, formClass);
         }
       }
-    } catch (ReflectiveOperationException | RuntimeException exception) {
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+      // LinkageError included deliberately: a Floodgate/Cumulus built against a newer Java, or one
+      // missing a transitive type, raises UnsupportedClassVersionError/NoClassDefFoundError here. This
+      // runs behind bedrockUiAvailable() on the menu-open path, so an escape would throw in a player's
+      // face instead of degrading to the chest GUI.
       floodgateApi = null;
       floodgateIsPlayer = null;
       floodgateSendForm = null;
@@ -216,7 +221,8 @@ public final class PaperGeyser {
           geyserIsBedrockPlayer = null; // older Geyser — connection probe is the fallback
         }
       }
-    } catch (ReflectiveOperationException | RuntimeException exception) {
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+      // See resolveFloodgate: "present but unlinkable" must answer "no Bedrock UI", not throw.
       geyserApi = null;
       geyserConnectionByUuid = null;
       geyserIsBedrockPlayer = null;
@@ -226,11 +232,9 @@ public final class PaperGeyser {
   private static synchronized Class<?> cumulusFormClass() {
     if (!cumulusResolved) {
       cumulusResolved = true;
-      try {
-        cumulusFormClass = Class.forName(CUMULUS_FORM);
-      } catch (ClassNotFoundException notFound) {
-        cumulusFormClass = null;
-      }
+      // Through the shared probe: initialize=false (only the Class object is needed, to resolve
+      // FloodgateApi#sendForm's overload) and LinkageError caught alongside ClassNotFoundException.
+      cumulusFormClass = PlatformProbes.linkableClass(CUMULUS_FORM, PaperGeyser.class.getClassLoader());
     }
     return cumulusFormClass;
   }

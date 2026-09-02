@@ -4,6 +4,7 @@ import com.sexidium.core.game.hud.GameHud;
 import com.sexidium.core.platform.HudDriver;
 import com.sexidium.core.platform.HudSurfaceHandle;
 import com.sexidium.core.platform.UiAdapter;
+import com.sexidium.core.platform.backend.Backend;
 import com.sexidium.core.platform.hud.HudCapability;
 import com.sexidium.core.platform.hud.HudSurfaceSpec;
 
@@ -20,8 +21,15 @@ import java.util.function.Supplier;
  * {@link HudSurfaceSpec} and gets back a handle; whether that renders as a BetterHud layout in the
  * corner, as lines on the scoreboard, or as both for different players in the same match, is a
  * question it never has to ask.</p>
+ *
+ * <p>It is also an instance of the general {@link Backend} idea — platform implementation stacked
+ * over a guaranteed floor, reporting only what it can serve <em>right now</em> — and implements that
+ * interface directly. What it does NOT take from the generic stack is the selection policy: HUD's
+ * layers are not mutually exclusive (the same spec renders through both, per player), so
+ * {@link #open(HudSurfaceSpec)} composes handles instead of picking one backend. Other seams whose
+ * backends genuinely exclude each other select through {@code BackendStack}.</p>
  */
-public final class HudDriverStack implements HudDriver {
+public final class HudDriverStack implements HudDriver, Backend<HudCapability> {
   private final HudDriver platform;
   private final SidebarHudDriver sidebar;
 
@@ -37,6 +45,15 @@ public final class HudDriverStack implements HudDriver {
     capabilities.addAll(platform.capabilities());
     capabilities.addAll(sidebar.capabilities());
     return capabilities;
+  }
+
+  /**
+   * Both interfaces carry a {@code supports} default with the same erasure and neither refines the
+   * other, so the choice must be made here: they answer identically for this class anyway.
+   */
+  @Override
+  public boolean supports(HudCapability capability) {
+    return HudDriver.super.supports(capability);
   }
 
   @Override

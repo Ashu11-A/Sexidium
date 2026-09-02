@@ -12,17 +12,26 @@ package com.sexidium.paper.adapter.ui.betterhud;
  * {@code -1}, meaning "no opinion": a version we cannot place must not be read as a failure, because
  * refusing to draw on the strength of an unrecognised string would break a working server over a
  * parsing detail.</p>
+ *
+ * <p>Public (not package-private) because it is the single source of truth for version→format on
+ * Paper: {@code PaperServerVersionPort} and the pack-format consistency test read it too.</p>
  */
-final class PackFormats {
+public final class PackFormats {
   private PackFormats() {
   }
 
   /** @return the pack format for {@code minecraftVersion}, or -1 when it is not one we can place. */
-  static int of(String minecraftVersion) {
+  public static int of(String minecraftVersion) {
     if (minecraftVersion == null || minecraftVersion.isBlank()) {
       return -1;
     }
     String version = minecraftVersion.trim();
+    // A pre-release suffix never moves the format: scripts/lib/paper.sh pins RCs like
+    // "26.3-rc-1", and an RC client speaks its base minor's pack format.
+    int dash = version.indexOf('-');
+    if (dash >= 0) {
+      version = version.substring(0, dash);
+    }
     return switch (majorMinor(version)) {
       case "26.1" -> 84;
       case "26.2" -> 88;

@@ -1,5 +1,7 @@
 package com.sexidium.paper.adapter.ui.betterhud;
 
+import com.sexidium.paper.adapter.server.PaperServerVersionPort;
+import com.sexidium.paper.adapter.util.PlatformProbes;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
@@ -40,10 +42,11 @@ final class BetterHudLink {
 
   /**
    * The pack-format range BetterHud's newest shader overlay actually covers. Kept as data rather than
-   * as prose in four places, which is what it used to be.
+   * as prose in four places, which is what it used to be. Package-private (not private) so
+   * {@code PackFormatConsistencyTest} can hold the four copies of these numbers to their agreement.
    */
-  private static final int SUPPORTED_PACK_FORMAT_MIN = 84;
-  private static final int SUPPORTED_PACK_FORMAT_MAX = 87;
+  static final int SUPPORTED_PACK_FORMAT_MIN = 84;
+  static final int SUPPORTED_PACK_FORMAT_MAX = 87;
 
   private final Consumer<String> log;
   private volatile boolean enabled;
@@ -88,20 +91,17 @@ final class BetterHudLink {
    * the disabled path too.
    */
   boolean linkable() {
-    if (plugin() == null) {
-      return false;
-    }
-    try {
-      Class.forName(API_CLASS, false, getClass().getClassLoader());
-      return true;
-    } catch (ClassNotFoundException | LinkageError ignored) {
-      return false;
-    }
+    return plugin() != null
+        && PlatformProbes.linkable(API_CLASS, getClass().getClassLoader());
   }
 
   /**
    * Whether BetterHud's shaders match this server's Minecraft version closely enough to draw legible
-   * text. Warns once, then answers false for the rest of the session.
+   * text.
+   *
+   * <p>Re-evaluated on every call, like the rest of {@link #available()}. Only the WARNING is once —
+   * the answer is not cached, because the operator switch and the installed plugin can both change
+   * mid-session.</p>
    */
   private boolean capable() {
     if (!probeCapability) {
@@ -132,12 +132,12 @@ final class BetterHudLink {
    * the version string is not in a shape worth guessing from.
    */
   private int serverPackFormat() {
-    try {
-      return PackFormats.of(Bukkit.getMinecraftVersion());
-    } catch (RuntimeException ignored) {
-      // No server (unit tests), or an API that does not expose the version. Not a capability problem.
-      return -1;
-    }
+    // Through the shared version port, not Bukkit.getMinecraftVersion() directly: that call is absent
+    // on some forks, where it raises a NoSuchMethodError this method used to let escape — out through
+    // capable(), out through BetterHudDriver.capabilities(), out through HudDriverStack, and into the
+    // HUD open that was supposed to fall back to the sidebar. The port owns the fallback chain and
+    // never throws.
+    return PaperServerVersionPort.probe().packFormat();
   }
 
   private void warnOnce(String message) {

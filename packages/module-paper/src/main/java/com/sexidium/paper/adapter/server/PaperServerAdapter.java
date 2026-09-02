@@ -10,6 +10,7 @@ import com.sexidium.paper.adapter.inventory.PaperKitAdapter;
 import com.sexidium.paper.adapter.logging.PaperLoggerAdapter;
 import com.sexidium.paper.adapter.menu.PaperMenuAdapter;
 import com.sexidium.paper.adapter.npc.PaperNpcAdapter;
+import com.sexidium.paper.adapter.npc.PaperNpcBackend;
 import com.sexidium.paper.adapter.player.PaperPlayerAdapter;
 import com.sexidium.paper.adapter.resource.PaperResourceAdapter;
 import com.sexidium.paper.adapter.scheduler.PaperSchedulerAdapter;
@@ -21,6 +22,7 @@ import com.sexidium.core.platform.CommandDispatcherAdapter;
 import com.sexidium.core.platform.CommandSource;
 import com.sexidium.core.network.NetworkSettings;
 import com.sexidium.core.network.NodeIdentity;
+import com.sexidium.core.platform.capability.CapabilityRegistry;
 import com.sexidium.core.platform.ConfigurationAdapter;
 import com.sexidium.core.platform.DecorAdapter;
 import com.sexidium.core.platform.EventDispatcherAdapter;
@@ -37,11 +39,13 @@ import com.sexidium.core.platform.ServerAdapter;
 import com.sexidium.core.platform.ServerInfoPort;
 import com.sexidium.core.platform.SkinPort;
 import com.sexidium.core.platform.ConsoleTap;
+import com.sexidium.core.platform.version.ServerVersionPort;
 import com.sexidium.paper.adapter.npc.PaperSkinPort;
 import com.sexidium.core.platform.UiAdapter;
 import com.sexidium.core.platform.WorldLeaseService;
 import com.sexidium.core.platform.model.ItemKey;
 import com.sexidium.core.platform.model.PlatformType;
+import io.papermc.paper.ServerBuildInfo;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -68,9 +72,12 @@ public final class PaperServerAdapter implements ServerAdapter {
   private final PaperInventorySerializer inventorySerializer = new PaperInventorySerializer();
   private final PaperMenuAdapter menuAdapter;
   private final PaperRankTagAdapter rankTagAdapter = new PaperRankTagAdapter();
-  // Lazily created so the (optional, soft-depend) FancyNpcs/FancyHolograms classes are only referenced
-  // when an NPC backend is actually requested.
-  private volatile NpcAdapter npcAdapter;
+  // Lazily bound lobby-NPC backend: FancyNpcs when installed and linkable, the inert core no-op
+  // otherwise. The probing/gating lives in the backend (a Backend<Capability>); this class only
+  // resolves it once.
+  private volatile PaperNpcBackend npcBackend;
+  private volatile CapabilityRegistry capabilityRegistry;
+  private volatile ServerVersionPort versionPort;
   // Lazily created in-world decor backend (native display entities; no plugin dependency).
   private volatile DecorAdapter decorAdapter;
   // Cached full-registry enumerations (Material.values() is stable for the server lifetime).
@@ -123,9 +130,30 @@ public final class PaperServerAdapter implements ServerAdapter {
 
   @Override
   public PlatformType platformType() {
-    String name = Bukkit.getServer().getName().toLowerCase(Locale.ROOT);
-    if (name.contains("mohist") || name.contains("arclight") || name.contains("magma")) {
-      return PlatformType.HYBRID;
+    // ORDER IS LOAD-BEARING: the hybrid sniff runs FIRST, the brand check second.
+    //
+    // The brand check answers "is this Paper-compatible", which is the better question for everything
+    // it can answer — but it is answered YES by a hybrid that is itself a Paper fork, and the modern
+    // Mohist/Arclight lines are exactly that. Asking it first therefore returned BUKKIT for a server
+    // running Forge mods beside Bukkit plugins and left the sniff below unreachable, silently
+    // reclassifying the one platform this method exists to distinguish. The sniff is the only signal
+    // that identifies a hybrid at all, so it goes first; the brand check then covers everything the
+    // name cannot tell apart (Paper, Folia, Purpur), and the historical default closes it out.
+    try {
+      String name = Bukkit.getServer().getName().toLowerCase(Locale.ROOT);
+      if (name.contains("mohist") || name.contains("arclight") || name.contains("magma")) {
+        return PlatformType.HYBRID;
+      }
+    } catch (RuntimeException | LinkageError noServerName) {
+      // No server, or one that will not answer its own name — the brand check below may still know
+    }
+    try {
+      if (ServerBuildInfo.buildInfo().isBrandCompatible(ServerBuildInfo.BRAND_PAPER_ID)) {
+        return PlatformType.BUKKIT;
+      }
+    } catch (RuntimeException | LinkageError unavailable) {
+      // no ServerBuildInfo here (an older fork, or no server at all under test) — the default below
+      // is what this method always answered before the brand check existed
     }
     return PlatformType.BUKKIT;
   }
@@ -172,24 +200,18 @@ public final class PaperServerAdapter implements ServerAdapter {
 
   @Override
   public NpcAdapter npcs() {
-    NpcAdapter local = npcAdapter;
+    return npcBackend().adapter();
+  }
+
+  /** The lobby-NPC backend, resolved once. Probing and degradation live in {@link PaperNpcBackend}. */
+  private PaperNpcBackend npcBackend() {
+    PaperNpcBackend local = npcBackend;
     if (local == null) {
       synchronized (this) {
-        local = npcAdapter;
+        local = npcBackend;
         if (local == null) {
-          // PaperNpcAdapter links FancyNpcs/FancyHolograms classes, so only construct it when BOTH
-          // soft-depend plugins are installed. Otherwise fall back to a no-op so the server still
-          // starts (lobby NPCs are simply unavailable). The check uses plugin names only — it never
-          // references the optional classes, so it cannot trigger NoClassDefFoundError.
-          if (Bukkit.getPluginManager().getPlugin("FancyNpcs") != null
-              && Bukkit.getPluginManager().getPlugin("FancyHolograms") != null) {
-            local = new PaperNpcAdapter(plugin);
-          } else {
-            plugin.getLogger().info(
-                "Lobby NPCs disabled: install both FancyNpcs and FancyHolograms to enable them.");
-            local = NpcAdapter.NOOP;
-          }
-          npcAdapter = local;
+          local = new PaperNpcBackend(plugin, loggerAdapter);
+          npcBackend = local;
         }
       }
     }
@@ -381,5 +403,43 @@ public final class PaperServerAdapter implements ServerAdapter {
       consoleTap = tap;
     }
     return tap;
+  }
+
+  @Override
+  public ServerVersionPort versions() {
+    // Resolved once, like identity() and capabilities(): the running server's Minecraft version is a
+    // fact about the process, and it cannot change without a restart. This used to re-run the whole
+    // three-step probe chain on every call — including from the per-open HUD pack-format gate.
+    ServerVersionPort local = versionPort;
+    if (local == null) {
+      synchronized (this) {
+        local = versionPort;
+        if (local == null) {
+          local = PaperServerVersionPort.probe();
+          versionPort = local;
+        }
+      }
+    }
+    return local;
+  }
+
+  @Override
+  public CapabilityRegistry capabilities() {
+    CapabilityRegistry local = capabilityRegistry;
+    if (local == null) {
+      synchronized (this) {
+        local = capabilityRegistry;
+        if (local == null) {
+          // The HUD gate is the HUD stack's own honest answer; the NPC gate lives in the backend.
+          // Both are asked once here — the boot-time snapshot the operator reads. Hot paths keep
+          // their own per-call checks where late-enabling plugins matter.
+          local = PaperCapabilityRegistry.probe(
+              () -> !uiAdapter.betterHud().capabilities().isEmpty(),
+              npcBackend());
+          capabilityRegistry = local;
+        }
+      }
+    }
+    return local;
   }
 }

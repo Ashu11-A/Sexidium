@@ -25,14 +25,12 @@ final class PaperNpcSkinResolver {
   record TextureProperty(String value, String signature) {
   }
 
-  // Resolved once: null = not yet probed; FALSE-state = absent/unusable; present = cached method handles.
-  private static volatile Boolean probed;
+  // Resolved once through the shared probe (SkinsRestorerSupport); FALSE-state = absent/unusable.
+  private static volatile boolean probed;
   private static Object skinStorage;
   private static Method findSkinData;
   private static Method findOrCreateSkinData;
   private static Method getProperty;
-  private static Method getValue;
-  private static Method getSignature;
 
   private PaperNpcSkinResolver() {
   }
@@ -61,8 +59,8 @@ final class PaperNpcSkinResolver {
         return Optional.empty();
       }
       Object skinProperty = getProperty.invoke(optional.get());
-      String value = (String) getValue.invoke(skinProperty);
-      String signature = (String) getSignature.invoke(skinProperty);
+      String value = (String) com.sexidium.paper.adapter.util.SkinsRestorerSupport.propertyValue().invoke(skinProperty);
+      String signature = (String) com.sexidium.paper.adapter.util.SkinsRestorerSupport.propertySignature().invoke(skinProperty);
       if (value == null || value.isBlank()) {
         return Optional.empty();
       }
@@ -74,34 +72,32 @@ final class PaperNpcSkinResolver {
   }
 
   private static boolean ensureSkinsRestorer() {
-    Boolean state = probed;
-    if (state != null) {
-      return state && skinStorage != null;
+    if (probed) {
+      return skinStorage != null;
     }
     synchronized (PaperNpcSkinResolver.class) {
-      if (probed != null) {
-        return probed && skinStorage != null;
+      if (probed) {
+        return skinStorage != null;
       }
       try {
-        Class<?> provider = Class.forName("net.skinsrestorer.api.SkinsRestorerProvider");
-        Object skinsRestorer = provider.getMethod("get").invoke(null);
+        Object skinsRestorer = com.sexidium.paper.adapter.util.SkinsRestorerSupport.apiOrNull();
         Object storage = skinsRestorer.getClass().getMethod("getSkinStorage").invoke(skinsRestorer);
         Method find = storage.getClass().getMethod("findSkinData", String.class);
         Method findOrCreate = storage.getClass().getMethod("findOrCreateSkinData", String.class);
         Class<?> inputDataResult = Class.forName("net.skinsrestorer.api.property.InputDataResult");
         Method property = inputDataResult.getMethod("getProperty");
-        Class<?> skinProperty = Class.forName("net.skinsrestorer.api.property.SkinProperty");
-        getValue = skinProperty.getMethod("getValue");
-        getSignature = skinProperty.getMethod("getSignature");
         skinStorage = storage;
         findSkinData = find;
         findOrCreateSkinData = findOrCreate;
         getProperty = property;
-        probed = Boolean.TRUE;
-      } catch (ReflectiveOperationException | RuntimeException exception) {
-        probed = Boolean.FALSE;
+      } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+        // NOT remembered: this probes a PLUGIN, and plugins enable late. One lookup arriving before
+        // SkinsRestorer had enabled used to pin the answer to "no" for the whole session.
+        skinStorage = null;
+        return false;
       }
-      return probed && skinStorage != null;
+      probed = true;
+      return skinStorage != null;
     }
   }
 }

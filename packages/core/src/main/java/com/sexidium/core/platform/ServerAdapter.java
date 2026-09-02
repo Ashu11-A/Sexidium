@@ -1,7 +1,9 @@
 package com.sexidium.core.platform;
 
+import com.sexidium.core.platform.capability.CapabilityRegistry;
 import com.sexidium.core.platform.model.ItemKey;
 import com.sexidium.core.platform.model.PlatformType;
+import com.sexidium.core.platform.version.ServerVersionPort;
 
 import java.nio.file.Path;
 import java.util.Collection;
@@ -95,12 +97,12 @@ public interface ServerAdapter extends NodeRuntime {
     return InventorySerializer.NOOP;
   }
 
-  /** Chest-GUI menu renderer (Paper: InvUI; NeoForge: vanilla container). Default renders nothing. */
+  /** Chest-GUI menu renderer (Paper: the chest menu adapter). Default renders nothing. */
   default MenuAdapter menus() {
     return MenuAdapter.NOOP;
   }
 
-  /** Lobby NPC backend (Paper: FancyNpcs; NeoForge: native). Default spawns nothing. */
+  /** Lobby NPC backend (Paper: FancyNpcs + FancyHolograms via PaperNpcBackend). Default spawns nothing. */
   default NpcAdapter npcs() {
     return NpcAdapter.NOOP;
   }
@@ -110,7 +112,7 @@ public interface ServerAdapter extends NodeRuntime {
     return DecorAdapter.NOOP;
   }
 
-  /** Coloured rank-class name tags via native scoreboard teams (Paper + NeoForge). Default no-op. */
+  /** Coloured rank-class name tags via native scoreboard teams (Paper). Default no-op. */
   default RankTagAdapter rankTags() {
     return RankTagAdapter.NOOP;
   }
@@ -132,5 +134,21 @@ public interface ServerAdapter extends NodeRuntime {
   /** Console line stream for the Discord live-console relay. Default emits nothing. */
   default ConsoleTap consoleTap() {
     return ConsoleTap.NOOP;
+  }
+
+  /**
+   * Version facts about the running server (Minecraft version + resource-pack format). Default knows
+   * nothing: {@link ServerVersionPort#UNKNOWN}.
+   */
+  default ServerVersionPort versions() {
+    return ServerVersionPort.UNKNOWN;
+  }
+
+  /**
+   * What this backend can do right now, probed rather than assumed — with a reason for everything it
+   * cannot. Default supports nothing and explains nothing.
+   */
+  default CapabilityRegistry capabilities() {
+    return CapabilityRegistry.EMPTY;
   }
 }

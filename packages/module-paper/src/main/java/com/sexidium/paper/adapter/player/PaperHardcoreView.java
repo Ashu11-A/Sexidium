@@ -1,5 +1,6 @@
 package com.sexidium.paper.adapter.player;
 
+import com.sexidium.paper.adapter.util.PlatformProbes;
 import org.bukkit.Bukkit;
 import org.bukkit.GameRule;
 import org.bukkit.World;
@@ -9,7 +10,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,6 +46,30 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class PaperHardcoreView {
   private static final String LOGIN_PACKET = "net.minecraft.network.protocol.game.ClientboundLoginPacket";
+
+  /**
+   * Every record component {@link #buildLoginPacket} knows how to fill — the case labels below, named
+   * once so the enable-time shape check ({@link #loginPacketShapeReport()}) and the builder cannot
+   * drift apart silently. When Minecraft grows a component, the fix is one new case here PLUS one new
+   * name in this set; forgetting the set turns a green boot check into the warning that finds it.
+   *
+   * <h2>This is a UNION across supported versions, not one version's packet</h2>
+   * One jar runs on every Minecraft its {@code api-version} floor admits, and those versions do not
+   * agree on this record: 26.1.2 has 11 components, 26.2 has 12 — it added {@code onlineMode} before
+   * {@code enforcesSecureChat}. So a name in this set that the RUNNING server's packet lacks is the
+   * normal state of affairs on the older version, not drift, and {@link #loginPacketShapeReport()}
+   * deliberately does not report it.
+   *
+   * <p>The asymmetry is the whole point. An <em>unrecognised</em> component is a real blocker: the
+   * builder iterates the actual components and would hit {@code default -> null} and give up. A
+   * <em>missing</em> one costs nothing, because a case that is never reached is never a problem. An
+   * earlier version of this class reported both, and on the pinned 26.1.2 that turned a working
+   * feature into a red line in the boot log.</p>
+   */
+  private static final Set<String> KNOWN_LOGIN_COMPONENTS = Set.of(
+      "playerId", "hardcore", "levels", "maxPlayers", "chunkRadius", "simulationDistance",
+      "reducedDebugInfo", "showDeathScreen", "doLimitedCrafting", "commonPlayerSpawnInfo",
+      "onlineMode", "enforcesSecureChat");
 
   // What we believe each client currently thinks. Seeded on join from the world they logged in to (which
   // is where the client got its own answer), updated on every packet we send, forgotten on quit. Kept so
@@ -80,6 +109,63 @@ public final class PaperHardcoreView {
     if (playerId != null) {
       CLIENT_VIEW.remove(playerId);
     }
+  }
+
+  /**
+   * The enable-time shape check: reflects the running server's {@code ClientboundLoginPacket} record
+   * components and diffs them against what {@link #buildLoginPacket} knows how to fill.
+   *
+   * <p>This is the check that converts the next silent Minecraft regression into a startup line. MC
+   * 26.2 added {@code onlineMode} and stopped every hardcore toggle until anyone noticed in-game; with
+   * this, the same change announces itself at boot instead. Needs no player — pure reflection on the
+   * packet class — so it runs before anybody is online.</p>
+   *
+   * @return one human-readable line per problem; empty means the packet shape matches and hardcore
+   *     hearts are expected to work
+   */
+  public static List<String> loginPacketShapeReport() {
+    Class<?> packet = PlatformProbes.linkableClass(LOGIN_PACKET, PaperHardcoreView.class.getClassLoader());
+    if (packet == null) {
+      // A server without NMS under this name cannot ever send the packet — but that is a question about
+      // AVAILABILITY, not about shape, and it is answered by unavailableReason() below. Reporting it
+      // here as a shape problem would alarm every boot on a fork that simply has no NMS.
+      return List.of();
+    }
+    RecordComponent[] components = packet.getRecordComponents();
+    if (components == null) {
+      return List.of("the login packet (" + LOGIN_PACKET + ") is not a record on this server;"
+          + " hardcore hearts cannot be updated");
+    }
+    List<String> problems = new ArrayList<>();
+    for (RecordComponent component : components) {
+      String name = component.getName();
+      if (!KNOWN_LOGIN_COMPONENTS.contains(name)) {
+        problems.add("unrecognised login-packet field '" + name + "': add a case that DERIVES it"
+            + " from the server to buildLoginPacket (never a literal), plus its name to"
+            + " KNOWN_LOGIN_COMPONENTS");
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Why hardcore hearts cannot be toggled on this server, or empty when they can — the answer the
+   * capability registry records for {@code HARDCORE_VIEW_PACKET}.
+   *
+   * <p>Split from {@link #loginPacketShapeReport()} because the two questions have different answers on
+   * the same server. A fork with no {@code ClientboundLoginPacket} has a perfectly fine SHAPE report
+   * (there is no shape to disagree with) and no CAPABILITY at all. Deriving the capability from the
+   * shape report alone reported "supported" on exactly the servers where {@link #bind} had already
+   * given up — green in the boot log and in {@code /sx admin capabilities}, with hearts that never
+   * rendered. A registry that guesses yes is worse than one that says nothing.</p>
+   */
+  public static Optional<String> unavailableReason() {
+    if (PlatformProbes.linkableClass(LOGIN_PACKET, PaperHardcoreView.class.getClassLoader()) == null) {
+      return Optional.of("this server does not expose " + LOGIN_PACKET + "; hardcore hearts keep the"
+          + " client's own view (the world's hardcore flag itself is unaffected)");
+    }
+    List<String> problems = loginPacketShapeReport();
+    return problems.isEmpty() ? Optional.empty() : Optional.of(String.join("; ", problems));
   }
 
   /**
@@ -198,7 +284,12 @@ public final class PaperHardcoreView {
       Object server = levelGetServer.invoke(level);
       serverLevelKeys = server.getClass().getMethod("levelKeys");
       enforceSecureProfile = optional(server.getClass(), "enforceSecureProfile");
-      Class<?> packetType = Class.forName(LOGIN_PACKET);
+      Class<?> packetType = PlatformProbes.linkableClass(LOGIN_PACKET,
+          PaperHardcoreView.class.getClassLoader());
+      if (packetType == null) {
+        giveUp("This server does not expose " + LOGIN_PACKET, null);
+        return false;
+      }
       loginComponents = packetType.getRecordComponents();
       if (loginComponents == null) {
         giveUp("The login packet is not a record on this server", null);
@@ -212,7 +303,11 @@ public final class PaperHardcoreView {
       loginPacket.setAccessible(true);
       supported = Boolean.TRUE;
       return true;
-    } catch (ReflectiveOperationException | RuntimeException exception) {
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+      // LinkageError included: everything above touches server internals, and "present but does not
+      // link" has to reach giveUp() like any other refusal. Without it the error escaped resolve(),
+      // escaped apply(), and surfaced inside EntryPolicy.prepareArrival — i.e. in a player's world
+      // entry — over a cosmetic heart texture.
       giveUp("Hardcore hearts cannot be updated on this server", exception);
       return false;
     }

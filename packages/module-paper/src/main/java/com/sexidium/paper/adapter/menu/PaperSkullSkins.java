@@ -2,6 +2,7 @@ package com.sexidium.paper.adapter.menu;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.destroystokyo.paper.profile.ProfileProperty;
+import com.sexidium.paper.adapter.util.SkinsRestorerSupport;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -28,13 +29,11 @@ import java.util.UUID;
  * </ol>
  */
 final class PaperSkullSkins {
-  // Resolved once: whether the SkinsRestorer API is on the classpath and how to read a stored skin.
-  // null = not yet probed; FALSE-state = absent/unusable (skip forever); present = cached method handles.
-  private static volatile Boolean skinsRestorerProbed;
+  // Resolved once through the shared probe (SkinsRestorerSupport): whether the API is on the classpath
+  // and how to read THIS consumer's storage. FALSE-state = absent/unusable (skip forever).
+  private static volatile boolean skinsRestorerProbed;
   private static Object skinsRestorerPlayerStorage;
   private static Method getSkinOfPlayer;
-  private static Method skinPropertyValue;
-  private static Method skinPropertySignature;
 
   private PaperSkullSkins() {
   }
@@ -65,8 +64,8 @@ final class PaperSkullSkins {
         return false;
       }
       Object skinProperty = optional.get();
-      String value = (String) skinPropertyValue.invoke(skinProperty);
-      String signature = (String) skinPropertySignature.invoke(skinProperty);
+      String value = (String) SkinsRestorerSupport.propertyValue().invoke(skinProperty);
+      String signature = (String) SkinsRestorerSupport.propertySignature().invoke(skinProperty);
       if (value == null || value.isBlank()) {
         return false;
       }
@@ -81,29 +80,27 @@ final class PaperSkullSkins {
   }
 
   private static boolean ensureSkinsRestorer() {
-    Boolean probed = skinsRestorerProbed;
-    if (probed != null) {
-      return probed && skinsRestorerPlayerStorage != null;
+    if (skinsRestorerProbed) {
+      return skinsRestorerPlayerStorage != null;
     }
     synchronized (PaperSkullSkins.class) {
-      if (skinsRestorerProbed != null) {
-        return skinsRestorerProbed && skinsRestorerPlayerStorage != null;
+      if (skinsRestorerProbed) {
+        return skinsRestorerPlayerStorage != null;
       }
       try {
-        Class<?> provider = Class.forName("net.skinsrestorer.api.SkinsRestorerProvider");
-        Object skinsRestorer = provider.getMethod("get").invoke(null);
+        Object skinsRestorer = com.sexidium.paper.adapter.util.SkinsRestorerSupport.apiOrNull();
         Object playerStorage = skinsRestorer.getClass().getMethod("getPlayerStorage").invoke(skinsRestorer);
         Method lookup = playerStorage.getClass().getMethod("getSkinOfPlayer", UUID.class);
-        Class<?> skinProperty = Class.forName("net.skinsrestorer.api.property.SkinProperty");
-        skinPropertyValue = skinProperty.getMethod("getValue");
-        skinPropertySignature = skinProperty.getMethod("getSignature");
         skinsRestorerPlayerStorage = playerStorage;
         getSkinOfPlayer = lookup;
-        skinsRestorerProbed = Boolean.TRUE;
-      } catch (ReflectiveOperationException | RuntimeException exception) {
-        skinsRestorerProbed = Boolean.FALSE;
+      } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+        // NOT remembered: this probes a PLUGIN, and plugins enable late. One lookup arriving before
+        // SkinsRestorer had enabled used to pin the answer to "no" for the whole session.
+        skinsRestorerPlayerStorage = null;
+        return false;
       }
-      return skinsRestorerProbed && skinsRestorerPlayerStorage != null;
+      skinsRestorerProbed = true;
+      return skinsRestorerPlayerStorage != null;
     }
   }
 }

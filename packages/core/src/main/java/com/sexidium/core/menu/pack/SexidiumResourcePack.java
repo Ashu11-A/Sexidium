@@ -44,7 +44,7 @@ import javax.imageio.ImageIO;
  *       with no model — available for future UIs without bloating the referenced-icon tables.</li>
  * </ul>
  *
- * <p>Pure and JDK-only (ImageIO + zip), so it runs headless and both the Paper and NeoForge adapters
+ * <p>Pure and JDK-only (ImageIO + zip), so it runs headless and inside every adapter
  * reuse it. {@link #build()} returns the zip bytes + their SHA-1.</p>
  */
 public final class SexidiumResourcePack {
@@ -57,7 +57,10 @@ public final class SexidiumResourcePack {
   //
   // min_format/max_format is NOT a 26.2 invention: 26.1.2's own bundled datapacks already declare it, so
   // the schema is shared and only the NUMBER moves between the two.
-  private static final int PACK_FORMAT = 84;
+  //
+  // Public (read-only) because it is one of the four places the same number lives — see
+  // PackFormatConsistencyTest, which fails the build when any of them drifts.
+  public static final int PACK_FORMAT = 84;
   // Fixed DOS-safe timestamp (2020-01-01) so the zip is reproducible byte-for-byte.
   private static final long FIXED_ENTRY_TIME = 1577836800000L;
 
