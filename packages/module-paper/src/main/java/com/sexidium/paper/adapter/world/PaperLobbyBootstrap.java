@@ -11,7 +11,6 @@ import com.sexidium.core.world.MapBundle;
 import com.sexidium.core.world.map.SpawnPointStore;
 import com.sexidium.core.world.map.SpawnPoints;
 import org.bukkit.Difficulty;
-import org.bukkit.GameMode;
 import org.bukkit.GameRule;
 import org.bukkit.Server;
 import org.bukkit.World;
@@ -94,7 +93,7 @@ public final class PaperLobbyBootstrap {
    * reaches the server on the next restart instead of needing the folder deleted by hand). A map whose
    * bundle is unchanged is never touched, so in-game edits survive. Gated by
    * {@code worlds.map-bundle.extract-if-missing} and {@code worlds.map-bundle.refresh-when-changed}
-   * (both default true). NeoForge is not yet wired.
+   * (both default true).
    *
    * <p>Safe here because these folders are clone <em>templates</em>: nothing has loaded them as worlds at
    * provisioning time. See {@link MapBundle} for what happens to the copy being replaced.</p>
@@ -256,8 +255,10 @@ public final class PaperLobbyBootstrap {
       if (multiverse == null) {
         return;
       }
-      MVWorldBridge mv = MVWorldBridge.of(multiverse, logger);
-      if (mv != null && mv.getWorld(lobbyName) == null) {
+      // The shared Multiverse bridge — the same one PaperWorldControl uses, so the two call sites
+      // cannot drift apart on Multiverse v4/v5 handling again.
+      MultiverseBridge mv = MultiverseBridge.tryBind(multiverse, logger);
+      if (mv != null && mv.world(lobbyName) == null) {
         mv.importWorld(lobbyName, World.Environment.NORMAL, WorldType.NORMAL, null);
       }
     } catch (RuntimeException exception) {
@@ -342,212 +343,6 @@ public final class PaperLobbyBootstrap {
       return Difficulty.valueOf(raw.trim().toUpperCase(Locale.ROOT));
     } catch (IllegalArgumentException exception) {
       return Difficulty.NORMAL;
-    }
-  }
-
-  /**
-   * Reflective bridge over the unstable Multiverse-Core API. Supports both the
-   * legacy v4 line ({@code com.onarandombox.MultiverseCore}, accessed through
-   * {@code getMVWorldManager()}) and the rewritten v5 line
-   * ({@code org.mvplugins.multiverse.core}, accessed through
-   * {@code MultiverseCoreApi.get().getWorldManager()} with vavr
-   * {@code Option}/{@code Attempt} result types).
-   */
-  static final class MVWorldBridge {
-    private static final String V5_API_CLASS = "org.mvplugins.multiverse.core.MultiverseCoreApi";
-    private static final String V5_CREATE_OPTIONS = "org.mvplugins.multiverse.core.world.options.CreateWorldOptions";
-    private static final String V5_IMPORT_OPTIONS = "org.mvplugins.multiverse.core.world.options.ImportWorldOptions";
-
-    private final Object worldManager;
-    private final LoggerAdapter logger;
-    private final boolean v5;
-
-    private MVWorldBridge(Object worldManager, LoggerAdapter logger, boolean v5) {
-      this.worldManager = worldManager;
-      this.logger = logger;
-      this.v5 = v5;
-    }
-
-    static MVWorldBridge of(Plugin multiverse, LoggerAdapter logger) {
-      // Multiverse v4: plugin instance exposes getMVWorldManager().
-      try {
-        Object wm = multiverse.getClass().getMethod("getMVWorldManager").invoke(multiverse);
-        if (wm != null) {
-          return new MVWorldBridge(wm, logger, false);
-        }
-        logger.warning("Multiverse getMVWorldManager returned null; trying the v5 API.");
-      } catch (ReflectiveOperationException ignored) {
-        // Not a v4 build; fall through to v5 detection.
-      }
-      // Multiverse v5: MultiverseCoreApi.get().getWorldManager().
-      try {
-        Class<?> apiClass = Class.forName(V5_API_CLASS);
-        Object api = apiClass.getMethod("get").invoke(null);
-        Object wm = api == null ? null : api.getClass().getMethod("getWorldManager").invoke(api);
-        if (wm != null) {
-          logger.info("Bound to Multiverse v5 WorldManager.");
-          return new MVWorldBridge(wm, logger, true);
-        }
-        logger.warning("Multiverse v5 getWorldManager returned null.");
-      } catch (ReflectiveOperationException exception) {
-        logger.warning("Could not bind to Multiverse world manager (v4 or v5): " + exception.getMessage());
-      }
-      return null;
-    }
-
-    Object getWorld(String name) {
-      if (v5) {
-        return unwrapOption(call(worldManager, "getWorld", new Class<?>[]{String.class}, name));
-      }
-      try {
-        return worldManager.getClass().getMethod("getMVWorld", String.class).invoke(worldManager, name);
-      } catch (ReflectiveOperationException exception) {
-        logger.warning("MVWorldManager.getMVWorld failed: " + exception.getMessage());
-        return null;
-      }
-    }
-
-    boolean createWorld(String name, World.Environment environment, WorldType type, String generator) {
-      return v5
-          ? createOrImportV5(V5_CREATE_OPTIONS, "createWorld", name, environment, type, generator)
-          : addWorldV4(name, environment, type, generator);
-    }
-
-    boolean importWorld(String name, World.Environment environment, WorldType type, String generator) {
-      return v5
-          ? createOrImportV5(V5_IMPORT_OPTIONS, "importWorld", name, environment, type, generator)
-          : addWorldV4(name, environment, type, generator);
-    }
-
-    private boolean addWorldV4(String name, World.Environment environment, WorldType type, String generator) {
-      try {
-        Class<?>[] paramTypes = new Class<?>[]{
-            String.class, World.Environment.class, Long.class, WorldType.class, boolean.class, String.class
-        };
-        Object[] args = new Object[]{name, environment, null, type, true, generator};
-        Object result = worldManager.getClass().getMethod("addWorld", paramTypes).invoke(worldManager, args);
-        return Boolean.TRUE.equals(result);
-      } catch (NoSuchMethodException exception) {
-        logger.warning("MVWorldManager.addWorld signature not found on this Multiverse build.");
-        return false;
-      } catch (ReflectiveOperationException exception) {
-        logger.warning("MVWorldManager.addWorld('" + name + "') failed: " + exception.getMessage());
-        return false;
-      }
-    }
-
-    private boolean createOrImportV5(String optionsClassName, String managerMethod, String name,
-        World.Environment environment, WorldType type, String generator) {
-      try {
-        Class<?> optionsClass = Class.forName(optionsClassName);
-        // Both option types are built from a static worldName(String) factory and
-        // expose fluent mutators; some mutators (e.g. worldType on import) may be
-        // absent, in which case we keep the previous builder instance.
-        Object options = optionsClass.getMethod("worldName", String.class).invoke(null, name);
-        options = applyOption(options, "environment", World.Environment.class, environment);
-        options = applyOption(options, "worldType", WorldType.class, type);
-        if (generator != null && !generator.isBlank() && !generator.equalsIgnoreCase("default")) {
-          options = applyOption(options, "generator", String.class, generator);
-        }
-        Object attempt = worldManager.getClass().getMethod(managerMethod, optionsClass).invoke(worldManager, options);
-        return isAttemptSuccess(attempt, managerMethod, name);
-      } catch (ReflectiveOperationException exception) {
-        logger.warning("Multiverse v5 " + managerMethod + "('" + name + "') failed: " + exception.getMessage());
-        return false;
-      }
-    }
-
-    void applyLobbyFlags(String name, String gameModeRaw, Difficulty difficulty, boolean pvp, String alias) {
-      Object mvWorld = getWorld(name);
-      if (mvWorld == null) {
-        return;
-      }
-      try {
-        GameMode gameMode = parseGameMode(gameModeRaw);
-        if (gameMode != null) {
-          invoke(mvWorld, "setGameMode", new Class<?>[]{GameMode.class}, gameMode);
-        }
-        invoke(mvWorld, "setDifficulty", new Class<?>[]{Difficulty.class}, difficulty);
-        invoke(mvWorld, "setPvp", new Class<?>[]{boolean.class}, pvp);
-        if (alias != null && !alias.isBlank()) {
-          invoke(mvWorld, "setAlias", new Class<?>[]{String.class}, alias);
-        }
-      } catch (Exception exception) {
-        logger.warning("Could not fully apply lobby flags to '" + name + "': " + exception.getMessage());
-      }
-    }
-
-    /** Applies a fluent builder mutator, keeping the original on any failure. */
-    private static Object applyOption(Object options, String method, Class<?> paramType, Object value) {
-      if (options == null || value == null) {
-        return options;
-      }
-      try {
-        Object updated = options.getClass().getMethod(method, paramType).invoke(options, value);
-        return updated != null ? updated : options;
-      } catch (ReflectiveOperationException exception) {
-        return options;
-      }
-    }
-
-    /** Unwraps a vavr {@code Option}; returns the value, or null when empty. */
-    private static Object unwrapOption(Object option) {
-      if (option == null) {
-        return null;
-      }
-      Object defined = call(option, "isDefined", new Class<?>[]{});
-      if (defined instanceof Boolean present && !present) {
-        return null;
-      }
-      Object value = call(option, "getOrNull", new Class<?>[]{});
-      return value != null ? value : (defined == null ? option : null);
-    }
-
-    private boolean isAttemptSuccess(Object attempt, String managerMethod, String name) {
-      if (attempt == null) {
-        return false;
-      }
-      Object success = call(attempt, "isSuccess", new Class<?>[]{});
-      if (success instanceof Boolean succeeded) {
-        if (!succeeded) {
-          Object reason = call(attempt, "getFailureReason", new Class<?>[]{});
-          logger.warning("Multiverse v5 " + managerMethod + "('" + name + "') did not succeed"
-              + (reason == null ? "." : ": " + reason));
-        }
-        return succeeded;
-      }
-      // Unknown Attempt shape; assume the call went through.
-      return true;
-    }
-
-    private static Object call(Object target, String method, Class<?>[] paramTypes, Object... args) {
-      if (target == null) {
-        return null;
-      }
-      try {
-        return target.getClass().getMethod(method, paramTypes).invoke(target, args);
-      } catch (ReflectiveOperationException exception) {
-        return null;
-      }
-    }
-
-    private static GameMode parseGameMode(String raw) {
-      if (raw == null) {
-        return GameMode.SURVIVAL;
-      }
-      try {
-        return GameMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-      } catch (IllegalArgumentException exception) {
-        return GameMode.SURVIVAL;
-      }
-    }
-
-    private static Object invoke(Object target, String method, Class<?>[] paramTypes, Object... args) throws ReflectiveOperationException {
-      try {
-        return target.getClass().getMethod(method, paramTypes).invoke(target, args);
-      } catch (NoSuchMethodException exception) {
-        return null;
-      }
     }
   }
 

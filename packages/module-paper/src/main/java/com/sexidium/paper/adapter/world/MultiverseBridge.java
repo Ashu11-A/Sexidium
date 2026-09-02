@@ -1,9 +1,9 @@
 package com.sexidium.paper.adapter.world;
 
 import com.sexidium.core.platform.LoggerAdapter;
+import com.sexidium.paper.adapter.util.PlatformProbes;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.PluginManager;
 
 /**
  * Best-effort reflective bridge to Multiverse-Core, used by {@link PaperWorldControl} to keep the
@@ -20,6 +20,10 @@ import org.bukkit.plugin.PluginManager;
  *
  * <p>Targets Multiverse-Core v5 ({@code org.mvplugins.multiverse.core.MultiverseCoreApi}, the current
  * line) and falls back to the v4 {@code getMVWorldManager()} API.</p>
+ *
+ * <p>This is THE Multiverse bridge (Plan.md Stage 0h): the second, near-identical one that used to
+ * live in {@code PaperLobbyBootstrap.MVWorldBridge} was folded into here, because two hand-rolled
+ * probes for the same plugin is how their version handling drifts apart.</p>
  */
 public final class MultiverseBridge {
   public static final String PLUGIN_NAME = "Multiverse-Core";
@@ -37,12 +41,24 @@ public final class MultiverseBridge {
   }
 
   /** Binds to Multiverse when it is installed and enabled, else returns null (MV optional at runtime). */
-  public static MultiverseBridge tryBind(PluginManager plugins, LoggerAdapter logger) {
+  public static MultiverseBridge tryBind(org.bukkit.plugin.PluginManager plugins, LoggerAdapter logger) {
     if (plugins == null) {
       return null;
     }
-    Plugin multiverse = plugins.getPlugin(PLUGIN_NAME);
-    if (multiverse == null || !plugins.isPluginEnabled(PLUGIN_NAME)) {
+    return tryBind(plugins.getPlugin(PLUGIN_NAME), logger);
+  }
+
+  /**
+   * Binds from the plugin instance itself, for callers that already resolved it.
+   *
+   * <p>Every failure below is caught, {@link LinkageError} included, because this runs inside
+   * {@link PaperWorldControl}'s constructor — which runs inside the server adapter's constructor, which
+   * runs during {@code onEnable}. A Multiverse compiled against a newer Java, or one whose static
+   * initialiser throws, would otherwise take the entire plugin down over an optional integration. A
+   * version probe must never be able to brick boot.</p>
+   */
+  public static MultiverseBridge tryBind(Plugin multiverse, LoggerAdapter logger) {
+    if (multiverse == null || !multiverse.isEnabled()) {
       return null;
     }
     // v4: plugin instance exposes getMVWorldManager().
@@ -51,20 +67,22 @@ public final class MultiverseBridge {
       if (wm != null) {
         return new MultiverseBridge(wm, logger, false);
       }
-    } catch (ReflectiveOperationException ignored) {
-      // not v4
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError notV4) {
+      // not v4, or a v4 API that will not link here — either way, try v5 below
     }
     // v5: MultiverseCoreApi.get().getWorldManager().
     try {
-      Class<?> apiClass = Class.forName(V5_API_CLASS);
-      Object api = apiClass.getMethod("get").invoke(null);
+      Class<?> apiClass = PlatformProbes.linkableClass(V5_API_CLASS, MultiverseBridge.class.getClassLoader());
+      Object api = apiClass == null ? null : apiClass.getMethod("get").invoke(null);
       Object wm = api == null ? null : api.getClass().getMethod("getWorldManager").invoke(api);
       if (wm != null) {
-        logger.info("Bound to Multiverse v5 WorldManager for world registration.");
+        logger.info("Bound to Multiverse v5 WorldManager.");
         return new MultiverseBridge(wm, logger, true);
       }
-    } catch (ReflectiveOperationException exception) {
-      logger.info("Multiverse-Core present but its world manager could not be bound: " + exception.getMessage());
+      logger.warning("Multiverse-Core is enabled but exposes neither the v4 nor the v5 world manager;"
+          + " Sexidium's worlds will not be registered with Multiverse.");
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+      logger.warning("Multiverse-Core present but its world manager could not be bound: " + exception);
     }
     return null;
   }
@@ -74,21 +92,41 @@ public final class MultiverseBridge {
     if (world == null) {
       return;
     }
-    String name = world.getName();
+    importWorld(world.getName(), world.getEnvironment(),
+        org.bukkit.WorldType.NORMAL, null);
+  }
+
+  /**
+   * Registers an already-on-disk world, carrying environment/type/generator through whichever options
+   * object this Multiverse line accepts. Best effort: any refusal or API drift logs and answers
+   * {@code false}, never breaks world management.
+   */
+  @SuppressWarnings("BooleanMethodIsAlwaysUsed") // best effort by contract: false is information, not failure
+  public boolean importWorld(String name, World.Environment environment,
+      org.bukkit.WorldType type, String generator) {
+    if (name == null || name.isBlank()) {
+      return false;
+    }
     try {
       if (isRegistered(name)) {
-        return;
+        return true;
       }
-      if (v5) {
-        importV5(name, world.getEnvironment());
-      } else {
-        worldManager.getClass()
-            .getMethod("addWorld", String.class, World.Environment.class, String.class,
-                org.bukkit.WorldType.class, boolean.class, String.class)
-            .invoke(worldManager, name, world.getEnvironment(), null, org.bukkit.WorldType.NORMAL, true, null);
+      boolean imported = v5
+          ? importV5(name, environment, type, generator)
+          : addWorldV4(name, environment, type, generator);
+      if (!imported) {
+        logger.warning("Multiverse import of '" + name + "' skipped: the world manager refused.");
       }
-    } catch (ReflectiveOperationException | RuntimeException exception) {
-      logger.info("Multiverse import of '" + name + "' skipped: " + exception.getMessage());
+      return imported;
+    } catch (NoSuchMethodException drifted) {
+      // Named separately because getMessage() on this one is a raw JVM signature string, which reads
+      // as noise unless it is labelled as what it is: the Multiverse API moved under us.
+      logger.warning("Multiverse import of '" + name + "' skipped: this Multiverse build has no"
+          + " matching world-manager method (" + drifted.getMessage() + ").");
+      return false;
+    } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+      logger.warning("Multiverse import of '" + name + "' skipped: " + exception);
+      return false;
     }
   }
 
@@ -113,7 +151,7 @@ public final class MultiverseBridge {
     } catch (ReflectiveOperationException | RuntimeException ignored) {
       // fall through to the object-taking overloads
     }
-    Object world = resolveWorld(name);
+    Object world = world(name);
     if (world == null) {
       return;
     }
@@ -194,8 +232,8 @@ public final class MultiverseBridge {
     return names;
   }
 
-  /** The Multiverse world object registered under {@code name}, unwrapping a vavr Option on v5. */
-  private Object resolveWorld(String name) {
+  /** The Multiverse world object registered under {@code name} (a vavr Option unwrapped on v5), or null. */
+  public Object world(String name) {
     try {
       Object result = worldManager.getClass().getMethod(v5 ? "getWorld" : "getMVWorld", String.class)
           .invoke(worldManager, name);
@@ -228,17 +266,108 @@ public final class MultiverseBridge {
     }
   }
 
-  private void importV5(String name, World.Environment environment) throws ReflectiveOperationException {
+  /**
+   * The v5 import path: options built from the static {@code worldName(String)} factory, fluent
+   * mutators applied where this Multiverse build has them (an absent one keeps the previous builder),
+   * then the manager's Attempt unwrapped for a real answer.
+   */
+  private boolean importV5(String name, World.Environment environment,
+      org.bukkit.WorldType type, String generator) throws ReflectiveOperationException {
     Class<?> optionsClass = Class.forName(V5_IMPORT_OPTIONS);
     Object options = optionsClass.getMethod("worldName", String.class).invoke(null, name);
-    try {
-      Object updated = options.getClass().getMethod("environment", World.Environment.class).invoke(options, environment);
-      if (updated != null) {
-        options = updated;
-      }
-    } catch (ReflectiveOperationException ignored) {
-      // keep base options
+    options = applyOption(options, "environment", World.Environment.class, environment);
+    options = applyOption(options, "worldType", org.bukkit.WorldType.class, type);
+    if (generator != null && !generator.isBlank() && !"default".equalsIgnoreCase(generator)) {
+      options = applyOption(options, "generator", String.class, generator);
     }
-    worldManager.getClass().getMethod("importWorld", optionsClass).invoke(worldManager, options);
+    Object attempt = worldManager.getClass().getMethod("importWorld", optionsClass)
+        .invoke(worldManager, options);
+    return attemptSucceeded(attempt, name);
+  }
+
+  /**
+   * The v4 import path: the six-argument {@code addWorld}, seed left null.
+   *
+   * <p>The signature is <em>found</em> rather than named. MV4 declares
+   * {@code addWorld(String, Environment, String seed, WorldType, Boolean generateStructures, String generator)}
+   * — but the seed parameter is {@code String} on some builds and {@code Long} on others, and
+   * {@code generateStructures} is boxed, so a single {@code getMethod(...)} with hard-coded parameter
+   * types answers {@code NoSuchMethodException} on every build it was not written against. Matching by
+   * name and arity instead makes the one path work across the line.</p>
+   *
+   * <p>{@code type} is passed through. It used to be accepted and then ignored in favour of a literal
+   * {@code NORMAL}, which was invisible only because both call sites happen to pass {@code NORMAL}
+   * today — a trap primed for the first caller that asks for {@code FLAT}.</p>
+   */
+  private boolean addWorldV4(String name, World.Environment environment,
+      org.bukkit.WorldType type, String generator) throws ReflectiveOperationException {
+    java.lang.reflect.Method addWorld = findAddWorldV4();
+    if (addWorld == null) {
+      throw new NoSuchMethodException("MVWorldManager.addWorld(String, Environment, <seed>, WorldType,"
+          + " boolean, String) is absent on this Multiverse build");
+    }
+    // Seed null on either boxing: "no seed given", which is what the native creator already used.
+    Object result = addWorld.invoke(worldManager, name, environment, null,
+        type == null ? org.bukkit.WorldType.NORMAL : type, Boolean.TRUE, generator);
+    return Boolean.TRUE.equals(result);
+  }
+
+  /**
+   * The six-argument {@code addWorld}, whichever seed/flag boxing this build declares. Null when the
+   * method is absent entirely, which the caller reports as API drift.
+   */
+  private java.lang.reflect.Method findAddWorldV4() {
+    for (java.lang.reflect.Method method : worldManager.getClass().getMethods()) {
+      if (!method.getName().equals("addWorld") || method.getParameterCount() != 6) {
+        continue;
+      }
+      Class<?>[] parameters = method.getParameterTypes();
+      boolean seedShaped = parameters[2] == String.class || parameters[2] == Long.class;
+      boolean flagShaped = parameters[4] == boolean.class || parameters[4] == Boolean.class;
+      if (parameters[0] == String.class && parameters[1] == World.Environment.class && seedShaped
+          && parameters[3] == org.bukkit.WorldType.class && flagShaped
+          && parameters[5] == String.class) {
+        return method;
+      }
+    }
+    return null;
+  }
+
+  /** Applies a fluent builder mutator, keeping the original builder on any failure. */
+  private static Object applyOption(Object options, String method, Class<?> paramType, Object value) {
+    if (options == null || value == null) {
+      return options;
+    }
+    try {
+      Object updated = options.getClass().getMethod(method, paramType).invoke(options, value);
+      return updated != null ? updated : options;
+    } catch (ReflectiveOperationException exception) {
+      return options;
+    }
+  }
+
+  /** Unwraps a v5 {@code Attempt} so a refusal is reported rather than assumed successful. */
+  private boolean attemptSucceeded(Object attempt, String name) {
+    if (attempt == null) {
+      return false;
+    }
+    try {
+      Object success = attempt.getClass().getMethod("isSuccess").invoke(attempt);
+      if (success instanceof Boolean ok && !ok) {
+        Object reason = null;
+        try {
+          reason = attempt.getClass().getMethod("getFailureReason").invoke(attempt);
+        } catch (ReflectiveOperationException ignored) {
+          // older Attempt shape without a reason
+        }
+        logger.info("Multiverse import of '" + name + "' did not succeed"
+            + (reason == null ? "." : ": " + reason));
+        return false;
+      }
+      return true;
+    } catch (ReflectiveOperationException unknownShape) {
+      // Unknown Attempt shape; assume the call went through.
+      return true;
+    }
   }
 }
