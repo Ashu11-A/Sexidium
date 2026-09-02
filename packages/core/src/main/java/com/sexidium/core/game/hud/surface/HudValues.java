@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
@@ -45,6 +46,17 @@ public final class HudValues {
    * once, which is not the same as "absent until it is first pushed" — see {@link #changedAt}.
    */
   private final Map<String, Long> changedAt = new ConcurrentHashMap<>();
+  /**
+   * Keys their publisher has declared to have nothing to say right now.
+   *
+   * <p>Not the same as unset, and the difference is the whole reason this exists. An unset key is a
+   * publisher that has not got round to it, and {@link #UNSET} draws a dash so somebody notices. A
+   * BLANKED key is a publisher saying "this row is deliberately not showing" — a section a player
+   * turned off. A pixel-addressed driver honours that by drawing an empty string, which costs a slot
+   * nobody can see; a line-addressed one has to skip the row outright, because a blank line on a
+   * scoreboard is a visible hole rather than an absence.</p>
+   */
+  private final Set<String> blanked = ConcurrentHashMap.newKeySet();
   private final LongSupplier clock;
 
   public HudValues() {
@@ -72,6 +84,30 @@ public final class HudValues {
   public void progress(String key, double value) {
     double clamped = Double.isNaN(value) ? 0.0d : Math.clamp(value, 0.0d, 1.0d);
     put(progresses, key, clamped);
+  }
+
+  /**
+   * Declares that this key is deliberately showing nothing, or takes that declaration back.
+   *
+   * <p>Idempotent like every other setter here, and it does NOT clear the key's value: a row that is
+   * un-blanked goes straight back to what it was last told, rather than to a dash until the next
+   * cadence.</p>
+   */
+  public void blank(String key, boolean value) {
+    String normalized = normalize(key);
+    if (normalized == null) {
+      return;
+    }
+    boolean changed = value ? blanked.add(normalized) : blanked.remove(normalized);
+    if (changed) {
+      changedAt.put(normalized, clock.getAsLong());
+    }
+  }
+
+  /** Whether this key is deliberately showing nothing. See {@link #blanked}. */
+  public boolean blanked(String key) {
+    String normalized = normalize(key);
+    return normalized != null && blanked.contains(normalized);
   }
 
   public LocalizedText textValue(String key) {

@@ -66,6 +66,12 @@ final class CompositeHudSurface implements HudSurfaceHandle {
   }
 
   @Override
+  public void blank(String key, boolean blanked) {
+    platform.blank(key, blanked);
+    fallback.blank(key, blanked);
+  }
+
+  @Override
   public void progress(String key, double value) {
     platform.progress(key, value);
     fallback.progress(key, value);

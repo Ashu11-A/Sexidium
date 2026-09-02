@@ -80,6 +80,11 @@ final class SidebarHudSurface implements HudSurfaceHandle, HudContributor {
   }
 
   @Override
+  public void blank(String key, boolean blanked) {
+    values.blank(key, blanked);
+  }
+
+  @Override
   public void show(PlayerAdapter playerAdapter) {
     if (playerAdapter == null || closed) {
       return;
@@ -119,6 +124,12 @@ final class SidebarHudSurface implements HudSurfaceHandle, HudContributor {
       return;
     }
     for (HudElement element : spec.elements()) {
+      // A blanked row is skipped rather than drawn empty. The overlay can afford an invisible slot;
+      // a sidebar cannot — an empty line there is a gap in the middle of the panel, which reads as a
+      // rendering fault rather than as a section somebody switched off.
+      if (values.blanked(element.key())) {
+        continue;
+      }
       LocalizedText line = values.render(element);
       if (line != null) {
         context.line(line);

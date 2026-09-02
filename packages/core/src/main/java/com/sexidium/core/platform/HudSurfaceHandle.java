@@ -91,6 +91,21 @@ public interface HudSurfaceHandle {
   /** Publishes a {@link com.sexidium.core.platform.hud.HudElement.Bar}'s fill, clamped to 0..1. */
   void progress(String key, double value);
 
+  /**
+   * Declares that a row is deliberately showing nothing, or takes that declaration back.
+   *
+   * <p>Not the same as pushing an empty value, and not the same as never pushing one. An unpushed key
+   * draws the unset dash, which is a readout saying it has lost track; a blanked one is a readout
+   * saying this row is switched off. Each driver honours that in the only way its surface allows — a
+   * pixel-addressed overlay draws an empty slot nobody can see, a line-addressed sidebar drops the row
+   * rather than leave a hole in the middle of the panel.</p>
+   *
+   * <p>The value under the key is kept, so un-blanking restores what was last published rather than a
+   * dash. Default no-op: a driver with nothing to hide loses nothing by ignoring it.</p>
+   */
+  default void blank(String key, boolean blanked) {
+  }
+
   /** Starts showing this surface to a player. For a popup, fires it once. */
   void show(PlayerAdapter playerAdapter);
 

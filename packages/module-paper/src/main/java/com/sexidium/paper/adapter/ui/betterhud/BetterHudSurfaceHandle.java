@@ -133,6 +133,11 @@ final class BetterHudSurfaceHandle implements HudSurfaceHandle {
   }
 
   @Override
+  public void blank(String key, boolean blanked) {
+    values.blank(key, blanked);
+  }
+
+  @Override
   public void show(PlayerAdapter playerAdapter) {
     Player player = nativePlayer.apply(playerAdapter);
     if (closed || player == null) {
