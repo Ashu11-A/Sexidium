@@ -2,11 +2,11 @@
 
 Every Sexidium command lives in one platform-agnostic class,
 [`CoreCommandService`](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java).
-The Paper and NeoForge bridges are thin shims: they wrap a native command sender as a
-`CommandSource` and forward the raw `String[]` to `execute(source, args)` (dispatch) and
-`suggest(source, args)` (tab completion). Because both adapters call the same service with the same
-argument vector, the subcommand set is **identical across platforms**; only the wiring, permission
-resolution, and argument transport differ (see [Platform bridges](#platform-bridges)). The root label
+The Paper bridge is a thin shim: it wraps a native command sender as a
+`CommandSource` and forwards the raw `String[]` to `execute(source, args)` (dispatch) and
+`suggest(source, args)` (tab completion), so every platform built on core serves the **same
+subcommand set**; only the wiring, permission resolution, and argument transport differ (see
+[Platform bridges](#platform-bridges)). The root label
 `/sexidium` and its alias `/sx` are equivalent; this doc uses `/sx`.
 
 > **Global commands.** The player-facing subcommands `menu`, `exit` (alias `leave`), `lobby` and
@@ -53,6 +53,9 @@ handler classes (`GameCommands`, `ExperienceCommands`, `LobbyCommands`, `FriendC
 | `/exit` / `/leave` (`/sx exit`\|`leave`) | — | `sexidium.play` | `GameCommands.handleExit` |
 | `/lobby` (`/sx lobby`) | `[invite\|accept\|leave\|kick\|disband\|list\|join\|mode\|teams\|size\|visibility\|start\|queue] [args]` | `sexidium.play` | `LobbyCommands.handle` |
 | `/friend` (`/sx friend`) | `<add\|accept\|remove\|list\|requests> [player]` | `sexidium.play` | `FriendCommands.handle` |
+| `/pay` (`/sx pay`) | `<player> <amount>` | `sexidium.play` (root) **+** `sexidium.economy.pay` (inner) | `EconomyCommands.handlePay` |
+| `/balance` (`/bal`, `/money`, `/sx balance`) | `[player]` | `sexidium.play`; `[player]` also needs `sexidium.economy.balance.others` | `EconomyCommands.handleBalance` |
+| `/baltop` (`/sx baltop`) | `[page]` | `sexidium.play` | `EconomyCommands.handleBaltop` |
 
 ### Player `/sx`
 
@@ -69,7 +72,7 @@ handler classes (`GameCommands`, `ExperienceCommands`, `LobbyCommands`, `FriendC
 ### Admin `/sx admin`
 
 Every operator/build tool now lives under `/sx admin`, dispatched by `AdminCommands.handle`
-([AdminCommands.java:44](../../packages/core/src/main/java/com/sexidium/core/command/AdminCommands.java#L44)):
+([AdminCommands.java:52](../../packages/core/src/main/java/com/sexidium/core/command/AdminCommands.java#L52)):
 each branch reslices the argument array so the focused handler receives exactly the shape it did as a
 former top-level command. **All require `sexidium.admin`.**
 
@@ -80,6 +83,11 @@ former top-level command. **All require `sexidium.admin`.**
 | `admin kit` | `[list]` \| `give <kit> [player]` \| `give <player> <kit>` | `GameCommands.handleKit` |
 | `admin bot` | `[status\|start\|stop\|restart\|logs\|reload\|config]` | `BotCommands.handle` |
 | `admin npc` | `create\|remove\|list\|here\|command\|name\|skin\|follow\|holo\|mode\|edit\|reload` | `NpcCommands.handle` |
+| `admin net` | `[status\|nodes\|…]` | `NetworkCommands.handle` |
+| `admin selftest` | — | inline `selfTest` — "is this node fit to serve?", the rollback trigger a rolling update reads |
+| `admin broadcast` | `<seconds> <update\|restart\|shutdown>` | inline `broadcast` |
+| `admin capabilities` | — | inline [`capabilities`](../../packages/core/src/main/java/com/sexidium/core/command/AdminCommands.java) — see [Capability readout](#capability-readout) |
+| `admin eco` (`admin economy`) | `give\|take\|set <player> <amount>` \| `reset\|balance <player>` \| `top [n]` | [`EconomyCommands.handleAdmin`](../../packages/core/src/main/java/com/sexidium/core/command/EconomyCommands.java) |
 | `admin backup` | `list [<experienceId>\|<player>] \| info <backupId> \| create <experienceId> \| restore <backupId> \| refresh <backupId> \| duplicate <experienceId> \| delete <backupId> \| pending` | [`BackupCommands.handle`](../../packages/core/src/main/java/com/sexidium/core/command/BackupCommands.java) |
 | `admin map tntwar` | `list \| create <id> \| <id> corner <red\|blue> <1\|2> \| <id> spawn <red\|blue> \| <id> save` | `TntWarCommands.handle` |
 | `admin map combat` | `list \| <id> <spawn\|clear>` (Combat-arena spawn capture → `sexidium-combat.yml`) | `CombatCommands.handle` |
@@ -98,14 +106,16 @@ permission gate, so even though `help` sits in the admin bucket² it is reachabl
 Buckets are static sets ([:28–30](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L28)),
 resolved in `hasRootPermission` ([:138](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L138)).
 Node constants: `ADMIN_PERMISSION=sexidium.admin`, `PLAY_PERMISSION=sexidium.play`,
-`AUTH_PERMISSION=sexidium.auth`. The root gate sees only the **first token**, so the whole admin tree
+`AUTH_PERMISSION=sexidium.auth`. Two money nodes are checked INSIDE the handler rather than at the
+root, because the root gate sees only the first token: `sexidium.economy.pay` (plugin.yml default
+`true`) and `sexidium.economy.balance.others` (default `op`). The root gate sees only the **first token**, so the whole admin tree
 sits behind the single `admin` bucket entry.
 
 | Bucket | Subcommands | Required node(s) |
 |---|---|---|
-| `PLAYER_SUBCOMMANDS` | `menu`, `exit`, `leave`, `join`, `experience`, `lobby`, `friend`, `top`, `rank`, `race` | `sexidium.play` |
+| `PLAYER_SUBCOMMANDS` | `menu`, `exit`, `leave`, `join`, `experience`, `lobby`, `friend`, `pay`, `balance`, `bal`, `money`, `baltop`, `top`, `rank`, `race` | `sexidium.play` |
 | `AUTH_SUBCOMMANDS` | `auth` | `sexidium.auth` **OR** `sexidium.play` |
-| `ADMIN_SUBCOMMANDS` | `admin` (→ `reload`, `stop`, `kit`, `bot`, `npc`, `map tntwar\|combat\|edit`) | `sexidium.admin` |
+| `ADMIN_SUBCOMMANDS` | `admin` (→ `reload`, `stop`, `kit`, `bot`, `npc`, `net`, `backup`, `eco`, `selftest`, `broadcast`, `capabilities`, `map tntwar\|combat\|edit`) | `sexidium.admin` |
 
 `start` is special-cased ([:139](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L139)):
 admitted at the root for `sexidium.play` **OR** `sexidium.admin`. The experience branch stays
@@ -120,10 +130,10 @@ short-circuited. Permission **resolution** differs per platform — see [Platfor
 ### `/sx start experience <challenge…> [--world=…] [--keep-inventory=…]`  (player)
 
 Builds a composable, persistent survival "experience" running any combination of challenges at once
-(`handleStartExperience` [:655](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L655)).
+(`ExperienceCommands.handleStart` [:229](../../packages/core/src/main/java/com/sexidium/core/command/ExperienceCommands.java#L229)).
 
-- Tokens after `experience`: known challenge ids are collected (deduped, request order); `--players=a,b` / `--players a,b` set a roster; unknown `--` flags are ignored. **Each unknown token is reported with a red "Unknown challenge" message** ([:675](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L675)) — not silently skipped.
-- `--players` is honored **only for admins** ([:686](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L686)); a normal player seeds with their own roster.
+- Tokens after `experience`: known challenge ids are collected (deduped, request order); `--players=a,b` / `--players a,b` set a roster; unknown `--` flags are ignored. **Each unknown token is reported with a red "Unknown challenge" message** ([ExperienceCommands.java:255](../../packages/core/src/main/java/com/sexidium/core/command/ExperienceCommands.java#L255)) — not silently skipped.
+- `--players` is honored **only for admins** ([ExperienceCommands.java:287](../../packages/core/src/main/java/com/sexidium/core/command/ExperienceCommands.java#L287)); a normal player seeds with their own roster.
 - `--keep-inventory=<true|false>` sets whether deaths keep items + XP (default **true**, applied to every dimension of the experience). Toggleable later from the experience's manage GUI.
 - `--world=<normal|nether|end|superflat|largebiomes|amplified>` picks the **map type** — the vanilla generation preset the world is built with and/or which dimension of it the player starts in. A world-generating challenge (`classicskyblock`, `randomskyblock`, `randomlayers`) sets the type implicitly; naming **two** of them is rejected, and combining one with a conflicting `--world` is rejected. See [world type](../gameplay/experiences.md#world-type-map-selection).
 - **Persistent path:** when the owner is a player and `core.experiences().available()`, a registered `ExperienceManager.Experience` is created (enforcing `maxPerPlayer` → `EXPERIENCE_LIMIT_REACHED`). Otherwise a transient game via `core.games().start(ExperienceGame.MODE_ID, …)` in a leased world.
@@ -133,8 +143,8 @@ Challenge mechanics: [game framework](../architecture/game-framework.md) and the
 
 ### `/sx start <minigames> <mode> [players…] [--players=a,b] [--flags]`  (admin)
 
-Launches a categorized match. Parsed by `parseStart`
-([:739](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L739)) with a
+Launches a categorized match. Parsed by `GameCommands.parseStart`
+([:109](../../packages/core/src/main/java/com/sexidium/core/command/GameCommands.java#L109)) with a
 **category-first grammar**:
 
 - `args[1]` is always the category slot (only `minigames` is registered for the admin path).
@@ -144,7 +154,7 @@ Launches a categorized match. Parsed by `parseStart`
 `handleStart` validates: mode non-blank, **category mandatory + exists**, and the descriptor's category
 matches the requested one.
 
-**Participant resolution** (`participants` [:1634](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L1634)) — **CHANGED**:
+**Participant resolution** (`CommandContext.participants` [:91](../../packages/core/src/main/java/com/sexidium/core/command/CommandContext.java#L91)) — **CHANGED**:
 
 - With explicit names → each resolved via `playerExact`.
 - With **no names and a player initiator** → the initiator **plus their online lobby group** (`core.lobbies().lobbyOf → onlineMembers`); never the whole server.
@@ -185,10 +195,10 @@ deduped in request order.
 
 ## `/sx join` (relationship-gated — CHANGED)
 
-`handleJoin` ([:1118](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L1118)):
+`GameCommands.handleJoin` ([:279](../../packages/core/src/main/java/com/sexidium/core/command/GameCommands.java#L279)):
 
 1. **Reconnect first:** if the player has no active match but a persisted session, `core.games().handleJoin(player)` rejoins it (no gate) and reports `COMMAND_JOIN_SUCCESS`.
-2. **Gated path:** builds `relatedPlayers(player)` ([:1152](../../packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java#L1152)) = online lobby/group members **+** persisted friends, then calls `core.games().joinInProgress(player, modeId, relatedPlayerIds)`.
+2. **Gated path:** builds `relatedPlayers(player)` ([GameCommands.java:313](../../packages/core/src/main/java/com/sexidium/core/command/GameCommands.java#L313)) = online lobby/group members **+** persisted friends, then calls `core.games().joinInProgress(player, modeId, relatedPlayerIds)`.
 
 A player may only join a match where a **friend or lobby member** is already playing — a stranger's
 match returns `NOT_RELATED`. (This refutes the old doc's "[HIGH] No party/friend gate on /sx join".)
@@ -211,7 +221,7 @@ A missing/blank mode id (and no reconnect) → `COMMAND_JOIN_USAGE`.
 `core.menus().openLobby(player)`. Roster ops reuse the localized `PARTY_*` message keys (the group is
 still spoken of as "your party"); most other lobby output is **hardcoded English MiniMessage**.
 Outcomes come from `LobbyResult`
-([LobbyResult.java:8](../../packages/core/src/main/java/com/sexidium/core/lobby/LobbyResult.java#L8)).
+([LobbyResult.java:8](../../packages/core/src/main/java/com/sexidium/core/world/lobby/LobbyResult.java#L8)).
 
 | Action | Effect | Result outcomes |
 |---|---|---|
@@ -304,11 +314,45 @@ Tab completion (`ExperienceCommands.suggest`
 - **`rank [player]`** — defaults to the command player (needs a player source then); `COMMAND_RANK_NONE` if no profile.
 - **`auth`** — reads `auth.code-expiry-seconds` (600), `auth.code-length` (6), `auth.code-characters` (`23456789`); status `CREATED`/`ALREADY_LINKED`/`DISABLED`; `SQLException` → warning + `AUTH_UNAVAILABLE`.
 - **`admin bot`** — default `status`; `reload` runs the reload callback then `bot.restart()`. **All bot output is hardcoded English MiniMessage**, not localized.
+- **`/pay` / `/balance` / `/baltop`** (`/sx pay|balance|baltop`) — null `economy()` → `ECONOMY_UNAVAILABLE` (no database on this node); `economy.enabled: false` → `ECONOMY_DISABLED`. Balances live in `economy_accounts` as **cents in an integer column**, shared across the network. `/pay` is player-only; `/balance <player>` and every `/sx admin eco` verb work from console. An offline `/pay` target resolves by name against the account table when `economy.pay.allow-offline` is on. Sexidium is also the server's **Vault economy provider** — see [platform and adapters](../architecture/platform-and-adapters.md).
 - **`/friend`** (`/sx friend`) — null `friends()` → `FRIEND_UNAVAILABLE`; SQLite-backed (`friends`/`friend_requests`). `add`/`accept`/`remove` resolve the counterpart via `onlinePlayerOrUsage` → `playerExact`, so the **other player must be online** even though accept/remove are pure DB ops.
 - **`admin npc`** — full editor command set incl. `edit` (opens `core.menus().openNpcEditor`) and `mode <minigame|none>`; saves per-id YAML and respawns immediately; output uses `sendMiniMessage` directly (not localized). NPC model: [game framework](../architecture/game-framework.md).
 - **`admin map tntwar`** — persists to `<world-root>/<world>/` via `TntWarMapStore`; maps configured in `minigames.tntwar.maps`; messages localized via `TNTWAR_MAP_*`. Stand in the map world to set corners/spawns; a map needs both bases + both spawns to be `ready`.
 - **`admin map combat`** — captures Combat-arena player spawn points into `sexidium-combat.yml` in the map's world folder; maps configured in `minigames.combat.maps`; mirrors `admin map tntwar`.
 - **`race`** — only works when the player's current match game is a `RaceGame`, else `RACE_USAGE`; `vote`/`switch`/`allow` forward to `RaceGame` methods.
+
+### Capability readout
+
+**`/sx admin capabilities`** — what this node can actually do, probed rather than assumed. It answers
+"does it work on *that* Minecraft version?" with a grep instead of an eyeball, which is what makes a
+cross-version test matrix cheap to run: point `SERVER_DIR`/`PAPER_VERSION` at each version in turn
+(`scripts/init-paper.sh`) and grep one line per node.
+
+One header line, then one line per capability the backend cannot serve, each with the reason:
+
+```
+SX-CAPABILITIES platform=BUKKIT minecraft=26.1.2 pack-format=84
+BEDROCK_FORMS       no — neither Floodgate nor Geyser exposes a form API here; Bedrock players get the chest GUI like everyone else
+SKIN_LOOKUP_OFFLINE no — SkinsRestorer is not installed; offline players resolve to their stored Mojang profile
+```
+
+**Missing entries are normal, not errors.** A plain Paper without BetterHud, SkinsRestorer and
+FancyNpcs legitimately lacks half the list; every one of them has a working degraded path, which is
+what the reason names.
+
+Three things worth knowing before reading the output:
+
+- **It is the boot-time snapshot, not a live probe.** The adapter resolves the registry once at enable,
+  because these are facts about the running server. Installing a plugin at runtime does **not** change
+  this output — restart the node. (The hot paths that care about late-enabling plugins, chiefly the HUD
+  driver, keep their own per-call checks.)
+- **The same data is printed at boot** as `SX-VERSION` + one `SX-CAPABILITY no=…` line per miss, so a
+  pipeline can grep either. `SX-CAPABILIT` matches both prefixes.
+- **`not probed by this backend`** as a reason is a bug in Sexidium, not a fact about the server: it
+  means a `Capability` constant was added without its probe. The registry fails it closed and says so;
+  `PaperCapabilityRegistryTest` is meant to catch it before it ever ships.
+
+Capability vocabulary and how to add one: [add-a-platform-capability.md](../guides/add-a-platform-capability.md).
 
 ### `/sx admin backup`
 
@@ -368,11 +412,14 @@ is permission-filtered; the first token follows `ROOT_ORDER`.
 | `lobby` | the 13 actions; arg3 is context-sensitive (player names / open-lobby hosts / minigame ids / `ffa,2,3,4` / `1,2,3,4` / `public,friends,invite`) — `LobbyCommands.suggest` |
 | `experience` | the 12 actions (`menu`/`edit`/`list`/`join`/`requests`/`accept`/`deny`/`public`/`private`/`hardcore`/`rename`/`delete`), then own/public ids or online names |
 | `friend` | `add`/`accept`/`remove`/`list`/`requests` |
+| `pay` | arg2 player names; arg3 `10`/`100`/`1000` |
+| `balance` (`bal`, `money`) | arg2 player names — **only** with `sexidium.economy.balance.others`, otherwise empty |
+| `admin eco` | arg3 `give`/`take`/`set`/`reset`/`balance`/`top`; arg4 player names (row counts under `top`); arg5 amounts under `give`/`take`/`set` |
 | `join` | running mode ids |
 | `rank` | online player names |
 | `auth` | `code` (admins only) |
 | `race` | dedicated suggest helper |
-| `admin` | `reload`/`stop`/`kit`/`bot`/`npc`/`net`/`backup`/`selftest`/`broadcast`/`map`; then `kit` → kit-or-player, `bot` → `status`/…/`config`, `npc` → NPC helper, `backup` → the 8 verbs then online player names, `map` → `tntwar`/`combat`/`edit` → each tool's own helper (`AdminCommands.suggest`) |
+| `admin` | `reload`/`stop`/`kit`/`bot`/`npc`/`net`/`backup`/`selftest`/`broadcast`/`capabilities`/`map`; then `kit` → kit-or-player, `bot` → `status`/…/`config`, `npc` → NPC helper, `backup` → the 8 verbs then online player names, `map` → `tntwar`/`combat`/`edit` → each tool's own helper (`AdminCommands.suggest`) |
 
 ---
 
@@ -392,43 +439,34 @@ is the executor + tab-completer for the `sexidium` command (alias `sx` from
 - **Permissions:** Bukkit `sender.hasPermission(node)`. `plugin.yml` declares **only** `sexidium.play` (default `true`) and `sexidium.admin` (default `op`); **`sexidium.auth` is not declared.**
 - **Reload callback:** `plugin::reloadSexidium` — a **full plugin reload**.
 
-### NeoForge bridge
+### Velocity proxy
 
-[`NeoForgeCommandBridge`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandBridge.java)
-registers two Brigadier literal roots (`sexidium` and `sx`,
-[:51–53](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandBridge.java#L51)),
-each with a single greedy-string `args` argument. Registration is driven by
-`onRegisterCommands(RegisterCommandsEvent)`; `registerCommands(dispatcher)` is also exposed for tests
-(there is no eager startup register). A bare root executes with `new String[0]`.
+The proxy owns no `/sx` tree: it implements only core's proxy-side `NodeRuntime` slice, relays
+network control messages, and dispatches PROXY console commands through Velocity's command manager.
+A backend-bound command must name its node over the message bus instead of silently running a
+same-named proxy command — see [platform-and-adapters.md](../architecture/platform-and-adapters.md),
+Part 3.
 
-- **Source mapping** (`sourceFrom` [:91](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandBridge.java#L91)): a `ServerPlayer` → `NeoForgePlayerAdapter`; otherwise `NeoForgeCommandSource`.
-- **Argument transport:** greedy string split by `NeoForgeCommandArgs.splitArgs` (trim + split `\s+`; empty → no args → help) for dispatch; `splitArgsForSuggest` (split on `' '` with `-1` limit, preserving a trailing empty token) for completion; suggestions re-offset to the last space ([:71–79](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandBridge.java#L71)).
-- **Permissions** ([`NeoForgeCommandSource.hasPermission`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandSource.java#L45)): `sexidium.admin` → vanilla op **level 2**; everything else (`play`, `auth`) → **level 0 → always `true`**. Admin checks fail closed when the source cannot be resolved.
-- **Reload callback:** `core::reload` — **core-only reload**.
+> A NeoForge Brigadier bridge once existed in this slot (op-level permissions, greedy-string arg
+> transport); it was dropped from the build together with the rest of that adapter.
 
 ### Bridge comparison
 
-| Aspect | Paper | NeoForge |
+| Aspect | Paper | Velocity proxy |
 |---|---|---|
-| Root registration | `plugin.yml` command + alias | two Brigadier literal roots |
-| Aliases | `sexidium`, `sx` | `sexidium`, `sx` |
-| Arg transport | native `String[]` | greedy string → `splitArgs` / `splitArgsForSuggest` |
-| Source (player) | `PaperPlayerAdapter` | `NeoForgePlayerAdapter` |
-| Source (console) | `PaperCommandSource` | `NeoForgeCommandSource` |
-| Permission resolution | Bukkit named permissions | vanilla op level (admin=2, else 0) |
-| `sexidium.auth` declared | No (relies on `play` fallback) | n/a (level 0 = always true) |
-| Reload scope | `plugin::reloadSexidium` (full) | `core::reload` (core-only) |
-| Console dispatch helper | [`PaperCommandDispatcherAdapter`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/command/PaperCommandDispatcherAdapter.java) (`Bukkit.dispatchCommand`) | [`NeoForgeCommandDispatcherAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/command/NeoForgeCommandDispatcherAdapter.java) (reflective `performPrefixedCommand`, falls back to `dispatcher.execute`) |
+| Root registration | `plugin.yml` command + alias (`sexidium`, `sx`) + global aliases `/menu`, `/exit`, `/lobby`, `/friend`, `/pay`, `/balance` (`/bal`, `/money`), `/baltop` | none — no gameplay commands on the proxy |
+| Arg transport | native `String[]` | not applicable |
+| Source (player) | `PaperPlayerAdapter` | `VelocityPlayer` (as `NetworkPlayer`) |
+| Source (console) | `PaperCommandSource` | `VelocityConsoleSource` |
+| Console dispatch helper | [`PaperCommandDispatcherAdapter`](../../packages/module-paper/src/main/java/com/sexidium/paper/adapter/command/PaperCommandDispatcherAdapter.java) (`Bukkit.dispatchCommand`) | Velocity command manager (proxy commands only) |
 
-Both console dispatch helpers strip a leading `/`.
+The Paper console dispatch helper strips a leading `/`.
 
 ---
 
 ## Parity gaps & validation notes
 
-- **[MEDIUM] Reload scope differs.** Paper `/sx admin reload` and `/sx admin bot reload` run a full plugin reload (`plugin::reloadSexidium`); NeoForge runs `core::reload` only. Confirm the two are equivalent or align them.
 - **[MEDIUM] `sexidium.auth` undeclared in Paper `plugin.yml`.** The `auth OR play` check passes only via `play`'s default `true`; net behavior is currently correct, but the node is dead on Paper. Declare it (default `true`) to make the OR meaningful.
-- **[LOW] Permission configurability.** NeoForge is op-level only (`play`/`auth` always-on, `admin`=op2); no per-node grant/revoke as on Paper.
 - **[LOW] Hardcoded English output.** `bot` and most `/lobby` output are hardcoded English MiniMessage (only the `party.*` keys are localized).
 - **[LOW] Online-only relationship ops.** `friend add|accept|remove` **and** `experience accept|deny` resolve the target via `playerExact`, so the other player must be online even though the underlying ops are UUID-keyed DB operations.
 - **[INFO] `help` is admin-bucketed yet reachable publicly** via bare `/sx` (the empty-args branch runs before the gate).
@@ -443,8 +481,8 @@ Source of truth (the code; this doc is a derived view):
 (all dispatch, permission buckets, handlers, tab completion),
 [`CoreGameRegistryInitializer.java`](../../packages/core/src/main/java/com/sexidium/core/game/CoreGameRegistryInitializer.java)
 (modes/categories), [`ChallengeCatalog.java`](../../packages/core/src/main/java/com/sexidium/core/game/experience/ChallengeCatalog.java)
-(challenge ids), [`LobbyResult.java`](../../packages/core/src/main/java/com/sexidium/core/lobby/LobbyResult.java),
-the two bridges (`PaperCommandBridge.java`, `NeoForgeCommandBridge.java`), and Paper `plugin.yml`.
+(challenge ids), [`LobbyResult.java`](../../packages/core/src/main/java/com/sexidium/core/world/lobby/LobbyResult.java),
+the bridge (`PaperCommandBridge.java`), and Paper `plugin.yml`.
 Update **this doc in the same change** that touches those files. Triggers: a subcommand added/removed
 or moved between permission buckets (edit `ROOT_ORDER`/the bucket sets); a new game mode, category, or
 challenge id; a changed `LobbyResult`/`JoinResult`/`EnterOutcome` mapping; a bridge wiring, permission,

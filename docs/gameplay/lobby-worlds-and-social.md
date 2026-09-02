@@ -8,14 +8,14 @@ package, `com.sexidium.core.lobby`, built around one `Lobby` (a leader-keyed
 roster in exactly one of three states) owned by `LobbyManager`. Worlds live in
 `com.sexidium.core.world`, centred on `AbstractWorldControl` (the platform-neutral
 lease policy engine) plus the `WorldNaming` codec; lobby NPCs live in
-`com.sexidium.core.npc`. All logic is platform-agnostic core — the Paper and
-NeoForge adapters are thin command/event pass-throughs (see
-[neoforge-paper parity](../architecture/game-framework.md)) and supply only world/NPC/menu SPI
-backends.
+`com.sexidium.core.npc`. All logic is platform-agnostic core — the Paper
+adapter is a thin command/event pass-through (see
+[game framework](../architecture/game-framework.md)) and supplies the world/NPC/menu SPI
+backends. (A NeoForge adapter once shared this role and was dropped from the build.)
 
 > The old `com.sexidium.core.social` package (`PartyManager`/`Party`), the
 > separate `MatchLobbyManager`/`MatchmakingManager` classes, and the per-platform
-> `PaperWorldLeaseService`/`NeoForgeWorldLeaseService` *naming* logic no longer
+> per-platform world-service *naming* logic no longer
 > exist on the unified path. Where this doc disagrees with older docs, the code
 > wins.
 
@@ -193,9 +193,9 @@ Subcommands (`LobbyCommands.handle`):
 
 `/sx join <mode>` builds `relatedPlayers` = online lobby/group members + DB
 friends, then calls `GameManager.joinInProgress(player, mode, relatedPlayerIds)`
-(`CoreCommandService.java:1140-1167`). The manager returns **`NOT_RELATED`** when
+(`GameCommands.java:279-320`). The manager returns **`NOT_RELATED`** when
 a match of the mode is running but contains none of the related players
-(`GameManager.java:487-512`). A reconnect to the player's *own* persisted match
+(`GameManager.java:310` → `PlayerSessionCoordinator.java:370-405`). A reconnect to the player's *own* persisted match
 (e.g. after a restart) bypasses the gate; admins place arbitrary players via
 `/sx start`.
 
@@ -402,15 +402,6 @@ including `world.setPVP(settings.pvp())` (`PaperWorldControl.java:354-374`).
 `backendInstallWorldgen` only **deletes** a stale `datapacks/sexidium_worldgen`
 folder — Sexidium writes no boot-time datapack (see §8) (`PaperWorldControl.java:282-290`).
 
-### NeoForge (NOT migrated)
-
-NeoForge still runs the legacy `NeoForgeWorldLeaseService` on the flat
-`<serverHome>/worlds/...` layout. `NeoForgeLobbyBootstrap` creates the lobby via
-the reflective `ServerLevel` pipeline, re-qualifying its name to `sexidium:lobby`
-(`NeoForgeLobbyBootstrap.java:29-69`). Migrating it onto `AbstractWorldControl`
-(restoring the `<nick>/` experience nesting and gaining PvP/difficulty + portal
-parity) is the documented next step.
-
 ### Config keys
 
 `worlds.lobby.{name, namespace=minecraft, create-if-missing, generator, game-mode,
@@ -468,7 +459,7 @@ so entering a match strips them and a match kit can't return to the lobby. The f
 model (shared `UiItem`, `HotbarItem` subclasses, the single Paper materializer, and
 how to add an item) is documented in
 [UI interaction system](../interface/ui-interaction-system.md). The hotbar + crafting lock are
-**Paper-only**; NeoForge parity is outstanding.
+**Paper-only**, by design of what a hotbar physically is.
 
 `LobbyHud` is a platform-agnostic per-player scoreboard for lobby players: total
 players, the player's ping, global points/level/rank-class (`RankAwardPort`), and
@@ -523,8 +514,7 @@ copying the server Nether/End generation + the overworld seed, borderless). A
 *that* experience's siblings (overworld↔nether coord ×/÷8; overworld→own End entry
 platform at 100,50,0; End exit→overworld spawn); the lobby/temp/server worlds are
 untouched. `deletePersistent` cascades to the sibling folders. Toggle with
-`worlds.experiences.linked-dimensions` (default true). NeoForge keeps single-world
-experiences (out of scope).
+`worlds.experiences.linked-dimensions` (default true).
 
 Surveyed alternatives for richer/custom maps (kept as design backdrop): runtime
 in-world build (current), a custom `ChunkGenerator` via
@@ -546,7 +536,7 @@ The code is the source of truth; this doc is a derived view. Authoritative files
 `LobbyHud`, `LobbyBundle`, `WorldClone`),
 `com.sexidium.core.npc.NpcManager`, `com.sexidium.core.world.hotbar.*`
 (`HotbarController` + items — see [UI interaction system](../interface/ui-interaction-system.md)),
-the Paper/NeoForge world+guard backends,
+the Paper world+guard backends,
 `CoreCommandService` (`handleLobby`/`handleFriend`/`handleJoin`),
 `GameManager.joinInProgress`, and `config.yml`. **Update this doc in the same
 change that touches them.** Edit triggers: a new class added to any of those

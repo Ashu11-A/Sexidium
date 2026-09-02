@@ -8,7 +8,7 @@ effects first (size, potion effects, health scale, …).
 - Start: `/sx start chaos` (player-accessible; brings the initiator + their online party into a fresh
   leased world). Others join the running match with `/sx join chaos`. Aliases: `roulette`, `random`.
 - Registered in `CoreGameRegistryInitializer` (`CATEGORY_CHAOS`), so it auto-registers on Paper and
-  NeoForge — the mode is platform-agnostic (challenges are).
+  every platform — the mode is platform-agnostic (challenges are).
 
 ## How per-player scoping works
 
@@ -78,3 +78,15 @@ chaos` command still runs a transient (unsaved) match in a leased world.
   than forming "clubs" of co-rollers; a club grouping is a possible enhancement.
 - A mid-restart Chaos *match* is not auto-rehydrated (the world + per-player `.yml` are preserved, so the
   owner simply re-enters from My Experiences); in-session disconnect/reconnect IS restored.
+
+---
+
+## Keeping this current
+
+The code is the source of truth; this doc is a derived view. The authoritative files are
+`packages/core/src/main/java/com/sexidium/core/game/experience/` (the challenge framework and the
+composable twists), `game/chaos/ChaosGame.java`, and the `chaos.*` block in
+[`config.yml`](../../packages/core/src/main/resources/config.yml). Update **this doc in the same
+change** that touches those files. Triggers: a twist added, removed or renamed; a change to how twists
+are rolled, weighted or combined; a change to Chaos match persistence or rehydration; or a `chaos.*`
+config key added/removed/renamed.

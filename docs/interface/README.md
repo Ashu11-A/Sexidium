@@ -23,8 +23,7 @@ owns the **screen** it sits in. Add an icon in the first, add a screen in the se
 One `MenuView` must render for a Java client with the pack loaded (glyph background + `item_model`
 icons), a Java client that declined the pack (plain materials, plain title), **and** a Bedrock client
 arriving through Geyser/Floodgate — which never receives a Java resource pack and is instead rendered
-as a native Cumulus form by `PaperFormRenderer`. NeoForge gets a plain marked vanilla container with no
-custom art at all.
+as a native Cumulus form by `PaperFormRenderer`.
 
 Practically: never let a screen's *meaning* live in the art. If the glyph, the model, or the pack is
 missing, the plain material and the plain title must still say what the button does. Full matrix and

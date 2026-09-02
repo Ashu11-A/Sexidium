@@ -1,6 +1,6 @@
 # Networking, Discord Bot, Auth, Ranks & Persistence
 
-This subsystem connects the Minecraft server to an out-of-process Discord bot and backs both with a single SQLite store. It owns two in-JVM HTTP servers, the bot child-process lifecycle, the Discord account-linking flow, the rank-class system (with in-game and Discord tags), and the shared `sexidium.db` schema. Everything Java-side lives in the platform-agnostic `core` module; the Paper and NeoForge adapters only supply the `ServerAdapter`, open the `Database`, build the `AuthService`, and paint rank tags. See sibling docs for [game framework](../architecture/game-framework.md), [social/lobby](../gameplay/lobby-worlds-and-social.md), [experiences](../gameplay/experiences.md), and the [menu system & art](../interface/menus.md) the resource-pack server delivers.
+This subsystem connects the Minecraft server to an out-of-process Discord bot and backs both with a single SQLite store. It owns two in-JVM HTTP servers, the bot child-process lifecycle, the Discord account-linking flow, the rank-class system (with in-game and Discord tags), and the shared `sexidium.db` schema. Everything Java-side lives in the platform-agnostic `core` module; the adapters only supply their slice of the SPI (`ServerAdapter` on Paper, `NodeRuntime` on Velocity), open the `Database`, build the `AuthService`, and paint rank tags (Paper). See sibling docs for [game framework](../architecture/game-framework.md), [social/lobby](../gameplay/lobby-worlds-and-social.md), [experiences](../gameplay/experiences.md), and the [menu system & art](../interface/menus.md) the resource-pack server delivers.
 
 ## Topology
 
@@ -8,8 +8,8 @@ Two HTTP servers now run in the JVM, with different reach:
 
 | Server | Bind | Default port | Audience | Thread |
 |---|---|---|---|---|
-| [`ApiServer`](../../packages/core/src/main/java/com/sexidium/core/net/ApiServer.java) | `127.0.0.1` (loopback) | `8787` | the local Discord bot only | `Sexidium-API` |
-| [`ResourcePackServer`](../../packages/core/src/main/java/com/sexidium/core/net/ResourcePackServer.java) | `ui.resource-pack.bind` (default `0.0.0.0`, **public**) | `8788` | players' Minecraft clients | `Sexidium-Pack` |
+| [`ApiServer`](../../packages/core/src/main/java/com/sexidium/core/lib/net/ApiServer.java) | `127.0.0.1` (loopback) | `8787` | the local Discord bot only | `Sexidium-API` |
+| [`ResourcePackServer`](../../packages/core/src/main/java/com/sexidium/core/lib/net/ResourcePackServer.java) | `ui.resource-pack.bind` (default `0.0.0.0`, **public**) | `8788` | players' Minecraft clients | `Sexidium-Pack` |
 
 The bot↔server channel is **HTTP-only**. All five bot data paths (`GET /rank`, `GET /player`, `GET /discord`, `POST /command`, `POST /auth/link`) go over the loopback bridge. The bot never opens `sexidium.db` — account linking is performed Java-side over `POST /auth/link`, so the JVM is the sole writer of the database file.
 
@@ -84,7 +84,7 @@ The live channel between Java and the bot is a **single loopback WebSocket** car
 - **Transport:** [`BridgeClient`](../../packages/core/src/main/java/com/sexidium/core/lib/net/BridgeClient.java) (Java) ↔ `bot/src/minecraft/{server,client,events,codec}.ts`. Frames are correlated envelopes `{id,type,method,payload}`; `hello` carries the `api.token` handshake. Inbound JSON is parsed by the dependency-free [`JsonReader`](../../packages/core/src/main/java/com/sexidium/core/lib/net/JsonReader.java) (the read counterpart to `Json`).
 - **Procedures:** `rank.top`/`rank.byName`/`rank.byDiscord`, `server.command`/`server.info`/`server.restart`/`server.stop`, `console.tail`, `skin.get`, `auth.link`. Token/allowlist gating on the command/restart procedures matches the old `/command` rules (a failed call returns an `err` frame whose token the bot maps to a message: `disabled`/`forbidden`/`unauthorized`).
 - **Events (Java → bot, real-time):** `player.join`/`player.leave` (from `GameEventRouter`), `rank.changed` (from `RankService`'s change listener → live Discord role/nick refresh), `console.line` (opt-in via `api.rpc-console-events`), `server.status` (heartbeat). The bot's `discord/events/ready.ts` subscribes and relays to `LOG_CHANNEL_ID` / `EVENTS_CHANNEL_ID`.
-- **Platform ports** (core interfaces, Paper impls): [`ServerInfoPort`](../../packages/core/src/main/java/com/sexidium/core/platform/ServerInfoPort.java) (address/port/online/version/TPS), [`SkinPort`](../../packages/core/src/main/java/com/sexidium/core/platform/SkinPort.java) (SkinsRestorer texture via `PaperSkinPort`→`PaperNpcSkinResolver`), [`ConsoleTap`](../../packages/core/src/main/java/com/sexidium/core/platform/ConsoleTap.java) (`PaperConsoleTap`, a JUL root-logger handler — captures plugin/Bukkit lines, not raw vanilla log4j). NeoForge impls are deferred (defaults return empty/best-effort).
+- **Platform ports** (core interfaces, Paper impls): [`ServerInfoPort`](../../packages/core/src/main/java/com/sexidium/core/platform/ServerInfoPort.java) (address/port/online/version/TPS), [`SkinPort`](../../packages/core/src/main/java/com/sexidium/core/platform/SkinPort.java) (SkinsRestorer texture via `PaperSkinPort`→`PaperNpcSkinResolver`), [`ConsoleTap`](../../packages/core/src/main/java/com/sexidium/core/platform/ConsoleTap.java) (`PaperConsoleTap`, a JUL root-logger handler — captures plugin/Bukkit lines, not raw vanilla log4j). Other platforms return the empty defaults.
 
 **Skins for rank cards:** `skin.get` returns the Mojang texture property; the bot decodes it to the skin PNG URL and composites a 2D head (`bot/src/lib/skin.ts` + `ui/components/skin-avatar.tsx`), so rank/leaderboard cards show the player's real SkinsRestorer skin.
 
@@ -175,11 +175,11 @@ A link ties a Minecraft UUID to a Discord user id. Minecraft **generates** a cod
 3. Reject `MINECRAFT_ALREADY_LINKED` if that UUID already has a `discord_accounts` row.
 4. Insert `discord_accounts` (`+ discord_username`/`global_name`/`avatar`), upsert `players.discord_user_id`, mark the code consumed.
 
-**One-Discord → many-Minecraft is intentional**: `consumeCode` deliberately does *not* reject when the Discord user already owns other Minecraft names (`AuthRepository.java:135-136`). `AuthLinkResult.Status` still defines `DISCORD_ALREADY_LINKED` (the bot still handles its token), but the Java path never returns it. `statusToken()` (`AuthLinkResult.java:18-28`) maps to the exact strings the bot switches on.
+**One-Discord → many-Minecraft is intentional**: `consumeCode` deliberately does *not* reject when the Discord user already owns other Minecraft names (`AuthRepository.java:135-136`). `AuthResults.AuthLinkResult.Status` (`AuthResults.java:40`) still defines `DISCORD_ALREADY_LINKED` (the bot still handles its token), but the Java path never returns it. `statusToken()` (`AuthResults.java:51`) maps to the exact strings the bot switches on.
 
 ### Login gate
 
-`AuthLoginService.verify` (`:48-78`) is hooked on Paper at `AsyncPlayerPreLoginEvent` / NeoForge at `PlayerNegotiationEvent`:
+`AuthLoginService.verify` (`:48-78`) is hooked on Paper at `AsyncPlayerPreLoginEvent` and on the network at the proxy's pre-login event:
 
 - Allow if auth disabled **or** `require-for-login` is off.
 - **Fail-closed** (reject) if `authService` is null or a `SQLException` occurs.
@@ -213,7 +213,7 @@ The read API aggregates by Discord account: `topAggregated`/`aggregateByName`/`a
 
 ### Rank classes & tags
 
-[`RankClass`](../../packages/core/src/main/java/com/sexidium/core/rank/RankClass.java) — seven classes worst→best with `minLevel` thresholds and hex colours:
+[`RankClass`](../../packages/core/src/main/java/com/sexidium/core/data/RankClass.java) — seven classes worst→best with `minLevel` thresholds and hex colours:
 
 | Class | Color | minLevel |
 |---|---|---|
@@ -227,7 +227,7 @@ The read API aggregates by Discord account: `topAggregated`/`aggregateByName`/`a
 
 `forLevel(level)` picks the highest class whose threshold is met. The TS bot mirrors this in `bot/src/lib/ranks.ts`; the HTTP bridge sends the resolved class/colour so the bot never re-derives thresholds.
 
-[`RankTagService`](../../packages/core/src/main/java/com/sexidium/core/rank/RankTagService.java) resolves a player's `RankClass` from their **aggregated** score and paints it onto the in-game name via the platform `RankTagAdapter` (native scoreboard team, `NOOP` default). `teamName` prefixes a priority digit so the best rank sorts to the top of tab; `prefixMini` renders `<#hex><bold>[Class]</bold> `. Applied on join (`PaperEventBridge.java:76`) and re-applied on demand (e.g. `/sx rank` on yourself). Core SPI: [`RankTagAdapter`](../../packages/core/src/main/java/com/sexidium/core/platform/RankTagAdapter.java); Paper impl: `PaperRankTagAdapter`. [`LeaderboardEntry`](../../packages/core/src/main/java/com/sexidium/core/lib/data/LeaderboardEntry.java) is the single shape the bridge serializes.
+[`RankTagService`](../../packages/core/src/main/java/com/sexidium/core/data/RankTagService.java) resolves a player's `RankClass` from their **aggregated** score and paints it onto the in-game name via the platform `RankTagAdapter` (native scoreboard team, `NOOP` default). `teamName` prefixes a priority digit so the best rank sorts to the top of tab; `prefixMini` renders `<#hex><bold>[Class]</bold> `. Applied on join (`PaperEventBridge.java:76`) and re-applied on demand (e.g. `/sx rank` on yourself). Core SPI: [`RankTagAdapter`](../../packages/core/src/main/java/com/sexidium/core/platform/RankTagAdapter.java); Paper impl: `PaperRankTagAdapter`. [`LeaderboardEntry`](../../packages/core/src/main/java/com/sexidium/core/lib/data/LeaderboardEntry.java) is the single shape the bridge serializes.
 
 ## Resource pack server (`ResourcePackServer`)
 

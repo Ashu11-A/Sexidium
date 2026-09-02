@@ -10,7 +10,7 @@ types belongs in [`../interface/`](../interface/).
 | # | Document | Covers |
 |---|----------|--------|
 | 1 | [overview.md](overview.md) | The big idea: platform-agnostic `packages/core` + thin adapters, the `SexidiumCore` construction graph, startup/shutdown ordering, command/event flow in both directions, and a subsystem inventory that points at every other page in these docs. |
-| 2 | [platform-and-adapters.md](platform-and-adapters.md) | The SPI itself (`ServerAdapter`, `PlayerAdapter`, `WorldAdapter`, `SchedulerAdapter`, `UiAdapter`, event bridge, …), the immutable value model, default-method capability degradation and noop/headless impls — then both adapter implementations (Paper, NeoForge) with a parity-gaps table. |
+| 2 | [platform-and-adapters.md](platform-and-adapters.md) | The SPI itself (`ServerAdapter`/`NodeRuntime`, `PlayerAdapter`, `WorldAdapter`, `SchedulerAdapter`, `UiAdapter`, event bridge, …), the immutable value model, default-method capability degradation + the runtime capability probe, and noop/headless impls — then both adapter implementations (the Paper game-server adapter and the Velocity proxy adapter). |
 | 3 | [game-framework.md](game-framework.md) | The match engine only: `GameManager`, `ActiveMatch`, `AbstractGame`/`BaseTimedGame`, `GameRegistry` + descriptors + factories, `GameState` transitions, countdowns, the `GameEvent` router, mid-match join, reconnect/pending sessions, and the start → run → end → teardown lifecycle. |
 
 Start at `overview.md` even if you already know where you are going — it is the only page that names

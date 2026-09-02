@@ -8,7 +8,7 @@ and all extend a thin shared base —
 [`MinigameMode`](../../packages/core/src/main/java/com/sexidium/core/game/modes/MinigameMode.java) →
 [`BaseTimedGame`](../../packages/core/src/main/java/com/sexidium/core/game/modes/BaseTimedGame.java) →
 [`AbstractGame`](../../packages/core/src/main/java/com/sexidium/core/game/AbstractGame.java). They touch
-only the platform SPI and immutable model records, so identical logic runs on Paper and NeoForge. For
+only the platform SPI and immutable model records, so identical logic runs on every platform. For
 the engine that launches/ticks/cleans up matches see [game framework](../architecture/game-framework.md); for the SPI
 see [platform abstraction](../architecture/platform-and-adapters.md). The composable challenge modes are documented in
 [experiences](experiences.md).
@@ -164,7 +164,7 @@ position commands.
   (red→0, blue→1) when no battlemap file exists yet.
 - **Rendering** — `RegionRenderer.outline/marker` steps points along the 12 box edges and spawn
   columns, calling the new platform primitive `WorldAdapter.spawnDust(pos, rgb, size)` (Paper
-  `Particle.DUST`, NeoForge reflective `DustParticleOptions`). Colours come from `TeamColor.rgb()`.
+  `Particle.DUST`). Colours come from `TeamColor.rgb()`.
 - **Editor** (`world/map/editor`, `MapEditorService`/`MapEditSession`) — `/sx admin map edit <mode> <mapId>`
   (admin-gated) **clones the real map** via `WorldLeaseService.acquireOrCreateClone` (the same path a
   match uses — so the admin loads the actual built arena, not a freshly generated world), switches the
@@ -459,7 +459,7 @@ map re-exported into `assets/worlds/tntwars/` replaces the old copy on the next 
 `<id>.replaced-<timestamp>` (newest kept, older pruned). A folder with no stamp is *adopted* — stamped and
 left alone — so upgrading the jar never wipes maps seeded by an older build. They ship
 without a `sexidium-tntwar.yml`, so define each map's Red/Blue bases + spawns via `/sx admin map tntwar` or
-`/sx admin map edit tntwar <id>` before they play with proper sides. (NeoForge auto-extract is not yet wired.)
+`/sx admin map edit tntwar <id>` before they play with proper sides. 
 
 ---
 

@@ -37,6 +37,12 @@ calls `PaperUiItemFactory.build(button.visual(), packLoaded)`; the hotbar render
 `PaperUiItemFactory.build(hotbarSlot.item(), packLoaded)` and then adds its PDC routing tag. Changing how
 items render (a new component, a texture rule) is now a one-file change.
 
+Every materialized item is also stripped of its vanilla tooltip: an empty `attribute_modifiers` component
+(kills the material's own "When in Main Hand" block — a `diamond_sword` button is a picture, not a weapon)
+plus every `ItemFlag` the running server defines (enchantments, unbreakable, potion/book/banner extras,
+dye, trim, stored enchants). A UI item therefore shows only its name and lore. The `minecraft:<id>` and
+"N component(s)" lines are the client's own F3+H advanced tooltips and cannot be suppressed server-side.
+
 ## The dynamic lobby hotbar
 
 Package [`com.sexidium.core.world.hotbar`](../../packages/core/src/main/java/com/sexidium/core/world/hotbar/).

@@ -8,10 +8,11 @@
 
 ## 1. The big idea: platform-agnostic core + thin adapters
 
-Sexidium runs on **two unrelated server platforms** that share almost no API surface:
+Sexidium's core runs on **two unrelated runtimes** that share almost no API surface:
 
-- **Paper** (Bukkit/Adventure API) — `packages/module-paper` — `com.sexidium.paper`
-- **NeoForge** (vanilla Minecraft + mod loader, reflection-based) — `packages/module-neoforge` — `com.sexidium.neoforge`
+- **Paper** (Bukkit/Adventure API, every game server) — `packages/module-paper` — `com.sexidium.paper`
+- **Velocity** (the proxy front of the networked deployment; implements the proxy-side subset
+  `NodeRuntime` only) — `packages/module-velocity` — `com.sexidium.velocity`
 
 Rather than fork gameplay per platform, *all* game logic, command handling, matchmaking, lobbies, persistence, ranks, auth, and the HTTP/Discord bridge live in one platform-agnostic core:
 
@@ -22,8 +23,8 @@ A TypeScript Discord bot runs **out of process** (`../bot`), launched and superv
 ```
 packages/
   core/                 com.sexidium.core      <- ALL logic, zero platform deps
-  module-paper/         com.sexidium.paper     <- Bukkit/Adventure SPI impl
-  module-neoforge/      com.sexidium.neoforge  <- reflection-based vanilla SPI impl
+  module-paper/         com.sexidium.paper     <- Bukkit/Adventure SPI impl (game servers)
+  module-velocity/      com.sexidium.velocity  <- NodeRuntime impl (the network proxy)
   ../bot/               TypeScript Discord bot (out-of-process child)
 ```
 
@@ -31,10 +32,10 @@ packages/
 
 | Goal | How the split delivers it |
 |------|---------------------------|
-| **Write gameplay once** | A mode like `FugitiveGame` or an experience challenge runs unchanged on Paper and NeoForge because it is authored against `PlayerAdapter`/`WorldAdapter`, never a platform class. |
-| **Isolate platform churn** | Bukkit API breaks and NeoForge mapping changes are absorbed inside the adapter modules; core never recompiles for a platform bump. |
+| **Write gameplay once** | A mode like `FugitiveGame` or an experience challenge runs unchanged on any backend because it is authored against `PlayerAdapter`/`WorldAdapter`, never a platform class. |
+| **Isolate platform churn** | Bukkit API breaks and proxy API changes are absorbed inside the adapter modules; core never recompiles for a platform bump. |
 | **Testability** | Core is unit-testable headless using POJO fake adapters — every dependency is an interface, and `platform/noop` provides safe no-op defaults. |
-| **Parity by construction** | Both adapters implement the same SPI, so behavior is identical unless an adapter diverges; divergence shows up as "adapter X overrides/omits method Y". |
+| **Parity by construction** | Adapters implement the same SPI (Velocity the narrowed `NodeRuntime` slice), so behavior is identical unless an adapter diverges; divergence shows up as "adapter X overrides/omits method Y". |
 
 ### Dependency direction (strict, one-way)
 
@@ -42,29 +43,29 @@ packages/
 graph TD
     subgraph Adapters["Platform adapters (depend on core)"]
         Paper["module-paper<br/>com.sexidium.paper"]
-        Neo["module-neoforge<br/>com.sexidium.neoforge"]
+        Vel["module-velocity<br/>com.sexidium.velocity"]
     end
     subgraph Core["Core (no platform deps)"]
         SPI["platform SPI<br/>(interfaces + model records)"]
         Logic["game / lobby / event / command<br/>persist / data / net / bot"]
     end
-    MC["Minecraft runtime<br/>(Bukkit / NeoForge classes)"]
+    MC["Platform runtime<br/>(Bukkit / Velocity classes)"]
 
     Paper -->|implements| SPI
-    Neo -->|implements| SPI
+    Vel -->|implements| SPI
     Logic -->|calls| SPI
     Paper -->|uses| MC
-    Neo -->|uses| MC
+    Vel -->|uses| MC
     SPI -.->|never references| MC
 ```
 
-**The rule:** `adapters → core`, and within core `logic → SPI`. Compile-time enforced — `packages/core/build.gradle.kts` declares **zero** Bukkit/Paper/NeoForge/Minecraft dependencies, so a stray `import org.bukkit.*` in core would not compile.
+**The rule:** `adapters → core`, and within core `logic → SPI`. Compile-time enforced — `packages/core/build.gradle.kts` declares **zero** Bukkit/Paper/Velocity/Minecraft dependencies, so a stray `import org.bukkit.*` in core would not compile.
 
 ---
 
 ## 2. The SPI: how core obtains platform capabilities
 
-Every platform capability is a pure-Java interface in `com.sexidium.core.platform`. The single root is **`ServerAdapter`** (`platform/ServerAdapter.java:11`); each adapter builds exactly one concrete `ServerAdapter`, and every other sub-adapter is reachable from it.
+Every platform capability is a pure-Java interface in `com.sexidium.core.platform`. The single root is **`ServerAdapter`** (`platform/ServerAdapter.java:21`); each adapter builds exactly one concrete `ServerAdapter`, and every other sub-adapter is reachable from it.
 
 ```java
 // Required accessors (ServerAdapter.java):
@@ -78,13 +79,15 @@ Collection<PlayerAdapter> onlinePlayers();  Optional<PlayerAdapter> player(UUID)
 // Optional capability seams — Java default methods that no-op on a partial adapter:
 default String           itemTranslationKey(ItemKey);          // "" => caller falls back to a plain name
 default InventorySerializer inventorySerializer();             // NOOP
-default MenuAdapter      menus();    // NOOP  (Paper: InvUI; NeoForge: vanilla container)
-default NpcAdapter       npcs();     // NOOP  (Paper: FancyNpcs; NeoForge: native)
+default MenuAdapter      menus();    // NOOP  (Paper: the Bukkit-native chest renderer — no InvUI)
+default NpcAdapter       npcs();     // NOOP  (Paper: FancyNpcs + FancyHolograms via PaperNpcBackend)
 default DecorAdapter     decor();    // NOOP  (ItemDisplay/BlockDisplay/Interaction)
 default RankTagAdapter   rankTags(); // NOOP  (coloured scoreboard-team name tags)
+default ServerVersionPort versions(); // UNKNOWN (Paper: ServerBuildInfo → Bukkit version chain + pack format)
+default CapabilityRegistry capabilities(); // EMPTY (Paper: probed at boot; /sx admin capabilities prints it)
 ```
 
-The five default `NOOP` seams (`menus`/`npcs`/`decor`/`rankTags`/`inventorySerializer`) are exactly the SPI surfaces behind the menu, NPC, decor, rank-tag, and reconnect subsystems — a platform that omits them compiles and degrades silently (see §8).
+The five default `NOOP` seams (`menus`/`npcs`/`decor`/`rankTags`/`inventorySerializer`) are exactly the SPI surfaces behind the menu, NPC, decor, rank-tag, and reconnect subsystems — a platform that omits them compiles and degrades silently (see §8). The two newer probes (`versions()`/`capabilities()`) are read-only facts about the RUNNING server, not features: they feed the boot log and `/sx admin capabilities`, and hot paths keep their own per-call checks where late-enabling plugins matter.
 
 Two techniques keep the SPI platform-agnostic, both detailed in [platform-and-adapters.md](platform-and-adapters.md):
 
@@ -104,7 +107,7 @@ ExperienceManager    experiences();      // attached from SexidiumCore (null in 
 ExperienceStateStore experienceStore();  // file-backed per-world state (null in tests)
 ```
 
-`attachGameManager(...)` is package-private and called from the `GameManager` constructor (`GameManager.java:47`); `attachExperiences`/`attachExperienceStore` are public and called from the `SexidiumCore` ctor right after `GameManager` is built.
+`attachGameManager(...)` is package-private and called from the `GameManager` constructor (`GameManager.java:46`); `attachExperiences`/`attachExperienceStore` are public and called from the `SexidiumCore` ctor right after `GameManager` is built.
 
 ---
 
@@ -122,7 +125,7 @@ new SexidiumCoreDependencies(
     authEnabled);    // BooleanSupplier, defaults to () -> true
 ```
 
-The `SexidiumCore` constructor (`SexidiumCore.java:45-92`) builds **every** subsystem in this fixed order. Services keyed *DB?* are `null` when `database == null`:
+The `SexidiumCore` constructor (`SexidiumCore.java:63`) builds **every** subsystem in this fixed order. Services keyed *DB?* are `null` when `database == null`:
 
 | # | Field | Construction (key wiring edges) | DB? |
 |---|-------|---------------------------------|:---:|
@@ -179,58 +182,58 @@ graph TD
 
 ## 4. Startup and shutdown lifecycle ordering
 
-### `start()` — `SexidiumCore.java:94`
+### `start()` — `SexidiumCore.java:236`
 
 `messageService.reload()` → `kitAdapter.reload()` → `restorePersistedMatches()` → `worlds().start()` → `apiServer.start()` → `resourcePackServer.start()` → `botManager.start()` → `lobbyHud.start()` → `npcManager.start()` → `decorManager.start()` → `lobbyManager.start()` → `startWorldGarbageCollector()`.
 
-### `close()` — `SexidiumCore.java:115` (roughly reverse)
+### `close()` — `SexidiumCore.java:705` (roughly reverse)
 
 `stopWorldGarbageCollector()` → `lobbyManager.stop()` → `decorManager.stop()` → `npcManager.stop()` → `lobbyHud.stop()` → `gameManager.prepareShutdown()` → `worlds().shutdown()` → `botManager.stop()` → `resourcePackServer.stop()` → `apiServer.stop()` → then null-guarded `matchRepository.shutdown()` / `friendService.shutdown()` / `rankService.shutdown()`.
 
-### `reload()` — `SexidiumCore.java:109`
+### `reload()` — `SexidiumCore.java:692`
 
-`configuration().reload()` → `messageService.reload()` → `kitAdapter.reload()`. Triggered by Paper's `reloadSexidium()` and NeoForge's `core::reload`.
+`configuration().reload()` → `messageService.reload()` → `kitAdapter.reload()`. Triggered by the adapters' reload callbacks (Paper: `plugin::reloadSexidium`).
 
-### `restorePersistedMatches()` — `SexidiumCore.java:211`
+### `restorePersistedMatches()` — `SexidiumCore.java:456`
 
 No-op when `matchRepository == null`. Otherwise: `loadAll()` snapshots → `gameManager.importPersisted(...)` → `worlds().preserve(gameManager.pendingWorldNames())` → schedules `gameManager::discardStalePending` after `reconnect.restore-grace-seconds` (default 600, min 30) × 20 ticks.
 
-### World garbage collector — `SexidiumCore.java:231`
+### World garbage collector — `SexidiumCore.java:1409`
 
 Registered only when `worlds().enabled()` **and** `worlds.temp.gc.enabled` (default `true`). A `runTimer` with `worlds.temp.gc.initial-delay-seconds` (300) and `worlds.temp.gc.period-seconds` (300) calls `worlds().collectGarbage(gameManager.protectedWorldNames())`, so no in-use match world is reaped.
 
 ---
 
-## 5. Plugin / mod lifecycle on each platform
+## 5. Plugin lifecycle on each runtime
 
-Both platforms converge on: build adapters → open DB → provision lobby → `new SexidiumCore(deps)` → bind messages → `core.start()` → register the event bridge → bind commands. Adapter-specific detail lives in [platform-and-adapters.md](platform-and-adapters.md) and [platform-and-adapters.md](platform-and-adapters.md).
+The Paper game server and the Velocity proxy converge on: build adapters → open DB → `new SexidiumCore(deps)` → `core.start()` → wire the runtime's event/command surfaces. Only the Paper side provisions a lobby or owns gameplay; the proxy's job is identity, routing and the login gate. Adapter-specific detail lives in [platform-and-adapters.md](platform-and-adapters.md).
 
-### Paper — `PaperSexidiumPlugin` (`PaperSexidiumPlugin.java:30`)
+### Paper — `PaperSexidiumPlugin` (`PaperSexidiumPlugin.java:48`)
 
 `onEnable()`: `saveDefaultConfig()` → `PaperConfigurationAdapter` → `provisionLobby()` (`PaperLobbyBootstrap`, Multiverse v5) → `PaperMessageAdapter` + `PaperMenuAdapter` + `PaperServerAdapter(this, config, message, menu)` → `PaperKitAdapter` → `setupDatabase()` → `new SexidiumCore(deps with PaperGameRegistryFactory.create())` → `messageAdapter.use(core.messages())` → `core.start()` → register `PaperEventBridge` + `PaperLobbyGuard` + `PaperMenuAdapter` listeners → wire `PaperResourcePackService` pack-gating (`menuAdapter.setPackGate` / `lobbyGuard.setPackGate`, fed by `core.resourcePack()`) → bind `/sexidium` (alias `sx` via `plugin.yml`) to `PaperCommandBridge`.
 
 `onDisable()`: `core.close()` then `database.close()`.
 
-> Note the `PaperServerAdapter` constructor now also takes the menu adapter (`PaperSexidiumPlugin.java:37`).
+> Note the `PaperServerAdapter` constructor now also takes the menu adapter (`PaperSexidiumPlugin.java:67`).
 
-### NeoForge — `NeoForgeSexidiumMod` (`NeoForgeSexidiumMod.java`)
+### Velocity — `SexidiumVelocityPlugin` (`SexidiumVelocityPlugin.java`)
 
-The `@Mod` constructor only registers on `NeoForge.EVENT_BUS` and reflectively installs a `Dist.CLIENT`-only screen reskin (`NeoForgeClientScreenHooks`). Real init runs on `ServerStartingEvent` (idempotent via a `core != null` guard, `:62`): reflective `getServer` → `NeoForgeServerAdapter(server, config/sexidium)` → `NeoForgeKitAdapter(config)` → `setupDatabase()` → `NeoForgeLobbyBootstrap.provision()` → `CoreGameRegistryInitializer.create()` → `new SexidiumCore(deps)` → `serverAdapter.messageHandle().use(core.messages())` → `core.start()` → `worlds().start()` → register `NeoForgeEventBridge` → register `NeoForgeCommandBridge` + `registerCommands(dispatcher)`.
+The proxy implements only the SPI's proxy-side slice, `NodeRuntime` (no worlds, no menus, no games). Constructor work is registration only; real init runs on `ProxyInitializeEvent`: `new VelocityNodeRuntime(proxy, logger, dataDirectory, plugin)` → open/verify the shared database → start the node registry heartbeat → `BackendDirectory` derives the proxy's backend list from live `network_nodes` rows instead of a static `velocity.toml` block → wire the auth gate (`PreLoginPlanner` + `VelocityAuthGate`, the login half of the Discord-link flow) and the transfer consumer (`TransferConsumer`) + lobby selection (`LobbySelector`) for cross-node player routing.
 
-`ServerStoppingEvent`: `core.close()` → `worlds().shutdown()` → `serverAdapter.close()` → `database.close()`.
+Shutdown (`ProxyShutdownEvent`): stop the heartbeat and close the runtime; the proxy holds no worlds to save.
 
 ### Lifecycle parity
 
-| Phase | Paper hook | NeoForge hook |
+| Phase | Paper hook | Velocity hook |
 |-------|------------|---------------|
-| Init | `onEnable()` | `ServerStartingEvent` (idempotent) |
-| Teardown | `onDisable()` | `ServerStoppingEvent` |
-| Login gate | `AsyncPlayerPreLoginEvent` (HIGHEST) | `PlayerNegotiationEvent` |
-| Command roots | `plugin.yml` `sexidium`/`sx` | Brigadier literals `sexidium`/`sx` |
-| Scheduler driver | Folia `GlobalRegionScheduler`/`AsyncScheduler` | `ServerTickEvent.Post` (drives the cooperative `NeoForgeSchedulerAdapter`) |
-| Registry factory | `PaperGameRegistryFactory.create()` (paper wrapper) | `CoreGameRegistryInitializer.create()` (direct) |
+| Init | `onEnable()` | `ProxyInitializeEvent` |
+| Teardown | `onDisable()` | `ProxyShutdownEvent` |
+| Login gate | `AsyncPlayerPreLoginEvent` (HIGHEST) | `PreLoginEvent` via `PreLoginPlanner`/`VelocityAuthGate` |
+| Command roots | `plugin.yml` `sexidium`/`sx` | none — the proxy relays network control, it owns no `/sx` tree |
+| Scheduler driver | Folia `GlobalRegionScheduler`/`AsyncScheduler` | Velocity's own scheduler for heartbeats/timers |
+| Registry factory | `PaperGameRegistryFactory.create()` (paper wrapper) | not applicable — the proxy runs no game registry |
 
-Both registry paths ultimately go through `CoreGameRegistryInitializer.create()` (`game/CoreGameRegistryInitializer.java:19`). The NeoForge scheduler is driven **only** by `NeoForgeEventBridge`'s `ServerTickEvent.Post` — if that bridge failed to register, all countdowns/timers would stall.
+Both registry paths ultimately go through `CoreGameRegistryInitializer.create()` (`game/CoreGameRegistryInitializer.java:21`); the proxy never builds one.
 
 ### Deployment topology (many servers, one core per JVM)
 
@@ -242,13 +245,13 @@ The same bootstrap runs unchanged whether Sexidium is one standalone server or a
 
 ### Command in-flow
 
-Platform bridge → `CoreCommandService.execute(source, args)` (`command/CoreCommandService.java:71`). The service ctor is `(SexidiumCore core, Runnable reloadCallback)` (`:65`); each bridge supplies its own reload callback (`PaperCommandBridge` passes `plugin::reloadSexidium`, `NeoForgeCommandBridge` passes `core::reload`). `execute` lowercases the first token, checks `hasRootPermission` (`:147`), then dispatches: `start → handleStart`, `join → handleJoin`, `lobby → handleLobby`, `experience → handleExperience`, plus `stop`/`status`/`modes`/`kit`/`menu`/`exit`/`friend`/`rank`/`auth`/`bot`/`npc`/etc. `/sx` now has many subcommands beyond `start`/`join`. Full command tracing lives in [commands.md](../interface/commands.md).
+Platform bridge → `CoreCommandService.execute(source, args)` (`command/CoreCommandService.java:75`). The service ctor is `(SexidiumCore core, Runnable reloadCallback)` (`:55`); each bridge supplies its own reload callback (`PaperCommandBridge` passes `plugin::reloadSexidium`). `execute` lowercases the first token, checks `hasRootPermission` (`:147`), then dispatches: `start → handleStart`, `join → handleJoin`, `lobby → handleLobby`, `experience → handleExperience`, plus `stop`/`status`/`modes`/`kit`/`menu`/`exit`/`friend`/`rank`/`auth`/`bot`/`npc`/etc. `/sx` now has many subcommands beyond `start`/`join`. Full command tracing lives in [commands.md](../interface/commands.md).
 
-`GameManager.start` has two overloads (`GameManager.java:106` and `:110`); the 4-arg form takes `List<String> modeArgs`. It reserves participants synchronously before async world creation, so a duplicate start is rejected rather than racing.
+`GameManager.start` has two overloads (`GameManager.java:110` and `:114`); the 4-arg form takes `List<String> modeArgs`. It reserves participants synchronously before async world creation, so a duplicate start is rejected rather than racing.
 
 ### Event out-flow
 
-Native event → `EventBridge` translates it into a core `GameEvent` record → `core.events().handle(...)`. `core.events()` returns the `GameEventRouter` (`SexidiumCore.java:207`).
+Native event → `EventBridge` translates it into a core `GameEvent` record → `core.events().handle(...)`. `core.events()` returns the `GameEventRouter` (`SexidiumCore.java:876`).
 
 `GameEventRouter` (`event/GameEventRouter.java`) is `(serverAdapter, gameManager, lobbyManager)`. `handle()` special-cases `Join`/`Quit`/`Respawn`/`ChangedWorld` into dedicated `GameManager` hooks and routes everything else to `routeToActiveGames()` (`:71`), which calls `game.handle(event)` on **every** active match. `handleQuit` additionally calls `lobbyManager.onPlayerQuit(uuid)` so a disconnecting player is dropped from their lobby/queue (`:52`).
 
@@ -278,9 +281,9 @@ Native event → `EventBridge` translates it into a core `GameEvent` record → 
 
 ## 8. Validation notes
 
-- **[CORRECTED — was High] The party/friend join gate IS enforced now.** `handleJoin` (`CoreCommandService.java:1140`) computes `relatedPlayers(player)` and calls `GameManager.joinInProgress(player, modeId, relatedPlayerIds)` (`GameManager.java:487`). A non-related join returns `JoinResult.NOT_RELATED` → `COMMAND_JOIN_NOT_ALLOWED`. Self-reconnect to a persisted session bypasses the gate by design; admins use `/sx start`.
-- **[High] All non-lifecycle events broadcast to every active match.** `routeToActiveGames` (`GameEventRouter.java:71`) calls `game.handle(event)` on every match; `registerGame`/`unregisterGame` remain no-ops. New-mode authors must self-filter on participant/world.
-- **[Medium] Optional default SPI methods silently no-op.** The "default = graceful degradation" technique now covers more seams — `menus`/`npcs`/`decor`/`rankTags`/`inventorySerializer` all default to `NOOP`. On NeoForge, `setHealthScale`/`resetHealthScale` are Bukkit-only no-ops, so XpHealth health-bar scaling does nothing there.
+- **[CORRECTED — was High] The party/friend join gate IS enforced now.** `GameCommands.handleJoin` (`GameCommands.java:279`) computes `relatedPlayers(player)` (`GameCommands.java:313`) and calls `GameManager.joinInProgress(player, modeId, relatedPlayerIds)` (`GameManager.java:310`). A non-related join returns `JoinResult.NOT_RELATED` → `COMMAND_JOIN_NOT_ALLOWED`. Self-reconnect to a persisted session bypasses the gate by design; admins use `/sx start`.
+- **[High] All non-lifecycle events broadcast to every active match.** `routeToActiveGames` (`GameEventRouter.java:65`) calls `game.handle(event)` on every match; `registerGame`/`unregisterGame` remain no-ops. New-mode authors must self-filter on participant/world.
+- **[Medium] Optional default SPI methods silently no-op.** The "default = graceful degradation" technique now covers more seams — `menus`/`npcs`/`decor`/`rankTags`/`inventorySerializer` all default to `NOOP`. What keeps this honest is the runtime probe layer (`versions()`/`capabilities()`, §2): an adapter that cannot serve something is expected to say so with a reason via `CapabilityRegistry`, and `/sx admin capabilities` prints it — so a silent no-op on a node that CLAIMS support is a bug, while a declared absence is just the fallback doing its job.
 - **[Re-verify before publishing] Reconnect/RESUME inertness, single-match accessor (`active()`) assumptions, and join-teleport timing parity** predate the lobby-unification and experience subsystems; re-check them against current `GameManager` rather than copying forward.
 - **[Stale package — removed]** There is no `com.sexidium.core.social` package and no `PartyManager` class. `FriendService` lives in `com.sexidium.core.lobby` (`lobby/FriendService.java`); party/queue/friend are unified into `LobbyManager`.
 
@@ -288,6 +291,6 @@ Native event → `EventBridge` translates it into a core `GameEvent` record → 
 
 ## Keeping this current
 
-Source of truth (the doc is a derived view): `packages/core/src/main/java/com/sexidium/core/SexidiumCore.java` (construction graph + `start`/`close`/`reload`/`restorePersistedMatches`), `SexidiumCoreDependencies.java`, `platform/ServerAdapter.java`, `game/GameContext.java`, `event/GameEventRouter.java`, `event/GameEvent.java`, and the two bootstraps `module-paper/.../PaperSexidiumPlugin.java` + `module-neoforge/.../NeoForgeSexidiumMod.java`.
+Source of truth (the doc is a derived view): `packages/core/src/main/java/com/sexidium/core/SexidiumCore.java` (construction graph + `start`/`close`/`reload`/`restorePersistedMatches`), `SexidiumCoreDependencies.java`, `platform/ServerAdapter.java`, `game/GameContext.java`, `game/GameEventRouter.java`, `game/GameEvents.java`, and the two bootstraps `module-paper/.../PaperSexidiumPlugin.java` + `module-velocity/.../SexidiumVelocityPlugin.java`.
 
-Update **this doc in the same change** that touches those files. Triggers: a subsystem added/removed from the `SexidiumCore` ctor (update §3 table + the mermaid graph); a change to `start()`/`close()` ordering (§4); a new `ServerAdapter` accessor or SPI seam (§2); a new `GameEvent` permit (§6); a new `/sx` top-level subcommand or join-gate behavior change (§6/§8); a bootstrap step added on either platform (§5); or a config key added/removed for world GC or reconnect grace (§4).
+Update **this doc in the same change** that touches those files. Triggers: a subsystem added/removed from the `SexidiumCore` ctor (update §3 table + the mermaid graph); a change to `start()`/`close()` ordering (§4); a new `ServerAdapter` accessor or SPI seam (§2); a new `GameEvents` permit (§6); a new `/sx` top-level subcommand or join-gate behavior change (§6/§8); a bootstrap step added on either platform (§5); or a config key added/removed for world GC or reconnect grace (§4).

@@ -2,7 +2,7 @@
 
 A player-built **Experience** is a single, persistent, survival-only world that runs **any combination** of challenge twists at once (e.g. XP-Health + Shared-Inventory + Shared-Life together). It is open-ended — no win/lose, never auto-ends, death never ejects — and is owned by its creator, who alone can delete it. The host (`ExperienceGame`) composes the selected twists (`Challenge` objects) over a set of ordered pipelines and a typed capability registry so independent challenges interoperate instead of clobbering each other, persists everything to flat `.yml` files inside the world folder, and renders one unified scoreboard HUD. There is **no standalone per-twist game mode** — every twist only ever runs inside an Experience.
 
-Everything here lives in the platform-agnostic **core** (`packages/core`) under `com.sexidium.core.game.experience` (host + manager + service + store), `…experience.challenges` (the twists), `…experience.compose` (the interop layer) and `com.sexidium.core.game.team` (the minigame team system). It talks only to the core SPI (`PlayerAdapter` / `WorldAdapter` / `MobHandle` / `InventoryAdapter` / `UiAdapter`), never to Bukkit or NeoForge directly.
+Everything here lives in the platform-agnostic **core** (`packages/core`) under `com.sexidium.core.game.experience` (host + manager + service + store), `…experience.challenges` (the twists), `…experience.compose` (the interop layer) and `com.sexidium.core.game.team` (the minigame team system). It talks only to the core SPI (`PlayerAdapter` / `WorldAdapter` / `MobHandle` / `InventoryAdapter` / `UiAdapter`), never to Bukkit or Minecraft directly.
 
 Related docs (linked, not duplicated): the [game framework](../architecture/game-framework.md) (`Game`/`GameManager`/event router), the [menu system](../interface/menus.md) for the builder/manage/browse chest GUIs, [lobby, worlds & social](lobby-worlds-and-social.md) for lobby nav items, host match-lobbies (`/lobby`), lobby NPCs (`/sx admin npc`), world leasing and the persistent-world layout.
 
@@ -552,7 +552,101 @@ days survived in the *current* world) and `Resets` (worlds this run has been thr
 from a baseline recorded when the world became current, not from the world clock directly — a
 pool-adopted world has been ticking since server boot, so a raw `fullTime / 24000` would open the counter
 on "day 37". All three survive a restart; `Days` alone returns to zero on a reset, because it is the age
-of the world rather than of the run.
+of the world rather than of the run. Beneath them, separated by a spacer, sits the boss checklist.
+
+#### The boss checklist
+
+Under the counters, the four bosses a world is asked to get through, in the order the mode asks for
+them — **Elder Guardian → Warden → Wither → Ender Dragon** (`BossLadder`). Each is an unticked box until
+it dies, then a ticked, struck-through one:
+
+```
+Played: 1h 12m          ← white, the run
+Days: 3
+Resets: 4
+
+☑ E̶l̶d̶e̶r̶ ̶G̶u̶a̶r̶d̶i̶a̶n̶     ← green tick, dimmed struck label
+☑ W̶a̶r̶d̶e̶n̶
+☐ Wither                ← white, still to do
+☐ Ender Dragon
+```
+
+**There is no tally row.** Four lines that already show which rungs are ticked do not also need a
+number saying how many — on a corner readout that is a fifth line of reading for a fact the reader can
+see. The count lives where it is worth words: the announcement when a boss falls, and
+`/sx experience boss list`.
+
+Five things about it are decisions rather than defaults:
+
+- **A kill counts whichever order it happens in.** The ladder is the suggested route — easiest first —
+  not a gate. Refusing to tick a boss somebody actually beat would be punishing them for succeeding.
+- **The list is scoped to the WORLD, not the run.** It is not in the reset's carry allowlist, so a death
+  takes it back to nothing along with everything else. That is the point: the monument, the Deep Dark and
+  the End those bosses lived in stop existing with the world, so a list that carried over would credit a
+  run for bosses that are gone. It also gives the mode its shape — reaching the Ender Dragon and then
+  dying costs all four, which is the same bargain the world is already on.
+- **Colour is per span on both surfaces; the strike-through is real only on the sidebar.** A ticked rung
+  is `<green>☑</green> <gray><strikethrough>Warden</strikethrough></gray>` — a green tick against a
+  dimmed, struck label. The colours reach BetterHud because the generated layout sets
+  `use-legacy-format` and the publisher serializes to ampersand codes (§ *Row colour* in
+  [`ui-and-localization.md`](../interface/ui-and-localization.md)); the line arrives there as
+  `&a☑&r &7&mWarden`. The `&m` is parsed and thrown away — nothing in BetterHud references Adventure's
+  `TextDecoration`, its renderer reads `color()` and nothing else — so the corner shows a green tick
+  and a dimmed name, and the sidebar shows the same with the line actually struck through. That is why
+  the state also rides in a glyph: `☐` against `☑`, both 8px wide in unifont, so a rung ticking off
+  never shifts the column.
+- **Nothing on this surface animates.** A `PulseRow` on the tally would pop nicely, but an animated
+  surface is republished *every tick* for as long as it is worn (`HudSurfaceSpec#animated`, and the
+  driver's second pass), and this one is worn by every player for a whole match to animate an event that
+  happens at most four times per world. The chat announcement carries the moment instead.
+
+##### Where the checklist is stored
+
+In the experience's **shared state** — `state.yml`, inside the world folder, mirrored to the
+`challenge_state` column as a crash net (§ [What a run remembers](#what-a-run-remembers)). Not a table
+of its own, and not memory: it survives a disconnect and a restart, and dies with its world, which is
+the scoping the checklist wants. Three keys per rung, under `deathresets.`:
+
+| Key | Holds |
+|---|---|
+| `boss.<id>` | that it fell |
+| `boss.<id>.at` | the wall-clock instant, epoch millis — the exact date it died |
+| `boss.<id>.played` | the run's **played** seconds at that moment |
+
+The last two are not derivable from each other. Played time only accrues while somebody is inside
+(`OccupancyLedger`), so for a world that sits on disk between visits the wall clock between two kills
+and the play time between them are different numbers — usually very different. A rung ticked by hand
+records the same three facts as a real kill, so nothing downstream has to know which it was; un-ticking
+clears all three, because a kill time behind a cleared flag is a record of something the list says never
+happened.
+
+##### Controlling it live
+
+```
+/sx experience boss list              # the ladder, with kill date and play time at the kill
+/sx experience boss done <boss>       # tick a rung off by hand
+/sx experience boss todo <boss>       # put it back on the list
+/sx experience boss hide | show       # hide the checklist, keeping the run counters
+```
+
+Scoped to the match the caller is **standing in**, not to an experience id they could name from
+anywhere. Every one of these changes something drawn on the screens of the people in that world, and
+`ExperienceCommandRouter` exists because acting on a world that lives on another node is its own problem
+with its own failure modes. Standing in it also means the challenge instance is right there.
+
+`hide` blanks the checklist rows without touching the counters, and "blank" is a distinct state from
+"unset" throughout the HUD stack (`HudValues#blank`): the overlay draws an invisible slot, the sidebar
+drops the row rather than leave a hole mid-panel, and un-hiding restores the last value instead of
+flashing the unset dash. It is persisted, so a player who turned it off does not get it back on the next
+boot.
+
+`EntityDeathGameEvent` is the signal, taken in `Challenge#onEntityDeath`. Two guards matter. The match is
+**exact** — `WITHER_SKELETON` is not the Wither and `ENDERMAN` is not the Ender Dragon — and it is scoped
+to **this** world, because `GameEventRouter` hands every entity death to every running match, so two
+Death Resets worlds on one node would otherwise tick each other's lists. Scoping goes through
+`WorldKey.fromRuntime`, which strips the `_nether` / `_end` suffixes, so a dragon dying in `…_r3_end`
+belongs to the run whose Overworld is `…_r3` — and keeps the generation, so a kill in a world this run
+has already thrown away does not count.
 
 **The tab player list** carries each player's death count for the run, as a
 `DisplaySlot.PLAYER_LIST` scoreboard objective (`TabListHandle` → `PaperTabListCounter`). It is the one
@@ -977,7 +1071,7 @@ Mechanics:
 |---|---|---|
 | 20 | `SharedLife.Drain` (`SharedLifeChallenge.java:176`) | drain the shared pool, absorb |
 | 30 | `XpHealth.XpDrain` (`XpHealthChallenge.java:102`) | burn XP, absorb |
-| 40 | `Chained.DeathLink` (`ChainedChallenge.java:610`) | death link; defers when already `absorbed()` or `fatalHandled()` |
+| 40 | `Chained.DeathLink` (`ChainDeathLink.java:17`) | death link; defers when already `absorbed()` or `fatalHandled()` |
 
 `HealthModel` (`HealthModel.java`) merges per-player `HealthSource`s and writes `setHealth`/`setHealthScale` **once** per tick (highest-priority source providing a value/scale wins) — no flicker from competing timers.
 
@@ -1323,7 +1417,7 @@ The team system belongs to the **minigame** side (not Experiences) but is in sco
   - `allocate(players, playersPerTeam)` (`:82`) — auto-sizes `count = clamp(ceil(players / size), 2, palette)`, round-robin balanced (sizes differ by ≤ 1).
   - `allocateFixed(players, teamCount)` (`:31`) — exactly the host-chosen count.
   - `allocateAssigned(players, teamCount, assignments)` (`:46`) — honours explicit per-player team-index assignments, then balance-fills the rest.
-- **`TeamDisplay`** (`TeamDisplay.java:26`) builds a per-viewer right-side scoreboard panel: your team (coloured) + allies + rivals with sizes.
+- **`TeamHudContributor`** (`TeamHudContributor.java:24`) builds a per-viewer right-side scoreboard panel: your team (coloured) + allies + rivals with sizes.
 
 `MinigameMode` (`MinigameMode.java`) wires `teamPlay`/`playersPerTeam`/`formTeams`/`lastTeamStanding`/`awardTeamWin`/`sameTeam`. The per-match size comes from the mode arg `size:<n>` (legacy `team:<n>`, or `ffa`) (`MinigameMode.java:119`), else config `minigames.<id>.players-per-team` (default 0 = FFA). `formTeams` (`:149`) uses `allocateAssigned` when a count/assignments arg is present, else `allocate`, and shows `TeamDisplay` unless `usesTeamSidebar()` is overridden false (Race / TNT War fold team info into their own board).
 

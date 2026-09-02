@@ -90,7 +90,7 @@ roll. It is *wrong* here: mob knockback, explosion punt and a piston all produce
 the video's rule is explicitly that being launched does not count. The trigger is therefore a dedicated core
 event, `GameEvents.PlayerJumpGameEvent` (non-cancellable — Paper rubber-bands a refused jump back to where it
 started), with `jump-cooldown-ms` only as a debounce so one physical jump can never register twice. Unported
-platforms never fire it and inherit no-op defaults (NeoForge deferred), matching the parity pattern.
+platforms never fire it and inherit no-op defaults, matching the parity pattern.
 
 Paper's own `PlayerJumpEvent` is *nearly* that signal: it is raised from the movement-packet handler on the
 predicate "was on the ground, is now airborne, Y went up", which cannot distinguish a keypress from a creeper

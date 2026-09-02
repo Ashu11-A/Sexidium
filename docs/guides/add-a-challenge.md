@@ -4,7 +4,7 @@ You are working on Sexidium's **experience challenges** — the composable survi
 Shared Life, Classic Skyblock, …) a player mixes into one persistent world. Read this whole file before
 touching code; the reference for how the pieces behave is [experiences.md](../gameplay/experiences.md). Everything
 below lives in the platform-agnostic core (`packages/core`) — a challenge **never** imports Bukkit or
-NeoForge types; platform work goes through the SPI seams (see [Prompt.platform.md](add-a-platform-capability.md)).
+Minecraft types; platform work goes through the SPI seams (see [Prompt.platform.md](add-a-platform-capability.md)).
 
 > **Adapting a YouTuber format?** Most challenges here come from one. Do the research and the
 > server-safe bounding first: [Prompt.youtube-challenge.md](research-a-youtube-challenge.md).

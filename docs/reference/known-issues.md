@@ -11,9 +11,10 @@ subsystems referenced here.
 
 > **Verification scope.** This pass re-read the core anchors only (`com.sexidium.core`). The Paper adapter
 > migrated to `module-paper` (Multiverse-Core v5.7, `AbstractWorldControl`/`WorldNaming`) since the old
-> report, and NeoForge is mid-migration, so **every Paper/NeoForge finding in the old report cites
-> pre-migration line numbers and was NOT re-verified here** — they are listed under "Re-verify outside core"
-> rather than asserted as open. The bot (`bot/`) was likewise not re-read this pass.
+> report, and the NeoForge adapter the old report also covered has since been DROPPED from the build, so
+> **every Paper/NeoForge finding in the old report cites pre-migration line numbers and was NOT re-verified
+> here** — they are listed under "Re-verify outside core" rather than asserted as open. The bot (`bot/`) was
+> likewise not re-read this pass.
 
 ---
 
@@ -144,6 +145,7 @@ move the `PAPER_VERSION` pin. `hud.betterhud.enabled` needs no change — it alr
 | ~~F59~~ | Networking | **FIXED.** `RankService#winPoints` now resolves the `default`/`participate` branch with the participate default (10), not the 100-point win default, so an unmatched (future) modeId earns the participate value rather than a full win. | `RankService#winPoints` |
 | F65 | Networking | `command_queue` table is still created but unused — the Discord→server path runs over HTTP `/command`, not a DB queue. Dead schema. **Not re-read end to end.** | `SchemaMigrator.java` (`command_queue` DDL) |
 | F68 | Deployment | **Third-party plugin versions are resolved once and never pinned.** `ensure_modrinth_plugin` returns early when the destination file already exists, so whatever Modrinth called "latest" the day the tree was first built is frozen there — and `SX_REFRESH_PLUGINS=1` re-resolves to *today's* latest with no record of what that is. The shared install removed the dangerous half of this (there is one destination, so nodes cannot differ from each other), and Multiverse-Core is pinned to the `release` channel after a resolve picked up `5.8.0-pre` while production ran 5.7.3. The remaining gap is reproducibility: no manifest records which version is installed. Fix direction: `SX_PIN_<PLUGIN>` carrying the exact URL + expected hash, failing the provision on a mismatch. | `ensure_modrinth_plugin` (`scripts/lib/modrinth.sh`), `paper::prune_unwanted_shared_jars` |
+| F69 | Interface / Economy | **`/bal` and `/money` collide with other economy plugins.** Both are declared as aliases of Sexidium's `balance` command. Bukkit resolves a contested name to whichever plugin registered it first and namespaces the loser — so on a server that also runs, say, EssentialsX, one of the two ends up reachable only as `/sexidium:balance`, with no error anywhere and players typing a command that answers for the wrong economy. `/pay` and `/baltop` carry the same risk under their own names. Note this cannot be fixed by removing the aliases: the collision is between the plugins, not inside ours. Mitigation: run exactly one economy plugin (which is the point of Sexidium being the Vault PROVIDER — see `docs/architecture/platform-and-adapters.md`), or drop the contested entries from the other plugin's `commands:` block. | `packages/module-paper/src/main/resources/plugin.yml` (`balance.aliases`), `PaperAliasCommand` |
 | F39 | Networking | Schema is hand-synced across three places (Java DDL superset, `001_auth.sql` subset, TypeORM entities); no automated drift guard. The `SchemaMigrator` header explicitly warns to keep them in sync. **Not re-read.** | `SchemaMigrator.java:12` |
 
 ---
@@ -155,7 +157,7 @@ Verified fixed in the current core; kept here as a short audit trail so a mainta
 | Old IDs | What was broken | What it is now |
 |---------|-----------------|----------------|
 | C2 / H5 / H6 | No mode overrode `writeSnapshot`/`restore`; snapshots saved zero player rows; reconnect restored nothing. | `AbstractGame#writeSnapshot`/`restore`/`onParticipantRejoin` capture every participant (inventory via `InventorySerializer`, health, position, role) and re-apply on a restart-rebuilt match (`AbstractGame.java:412-472`). |
-| H4 / H16 / F17 / F38 | Any player could `/sx join` a stranger's match; `/sx start` with no names conscripted every online player; `PartyManager.joinFriendParty` was dead unauthenticated code. | `GameManager#joinInProgress` now takes `relatedPlayerIds` and returns `NOT_RELATED` unless the target match contains a related player (`GameManager.java:487-522`). `/sx start <category> <mode>` for arbitrary players is admin-gated (`CoreCommandService.java:173`). `PartyManager` was removed entirely, merged into `LobbyManager` (which gates joins via `Lobby#canJoin(viewer, friends, invited)`). |
+| H4 / H16 / F17 / F38 | Any player could `/sx join` a stranger's match; `/sx start` with no names conscripted every online player; `PartyManager.joinFriendParty` was dead unauthenticated code. | `GameManager#joinInProgress` now takes `relatedPlayerIds` and returns `NOT_RELATED` unless the target match contains a related player (`GameManager.java:310` → `PlayerSessionCoordinator.java:370-405`). `/sx start <category> <mode>` for arbitrary players is admin-gated (`GameCommands.java:44`, re-checked against `sexidium.admin`). `PartyManager` was removed entirely, merged into `LobbyManager` (which gates joins via `Lobby#canJoin(viewer, friends, invited)`). |
 | H7 | `SharedInventoryGame` missed pickup/mine/craft mutations and the sync timer wiped fresh items. | Reconcile-based sync (no longer a stale overwrite). |
 | H13 / H14 | `/command` bridge ran arbitrary console commands gated only by a token whose default shipped as `change-me-please`, compared with `String.equals`. | `ApiServer` refuses `/command` (and `/auth/link`) while the token is unset/default, uses `MessageDigest.isEqual` (constant-time), and supports an optional `api.command-allowlist` (`ApiServer.java:52-206`). |
 | C1 / C4 / H8 / H10 / H11 / F30 / F31 | Paper/NeoForge world-name handling: full path vs bare prefix, lobby unresolvable, double-namespaced dimension keys, wrong folder deletes. | Core now owns world identity via `WorldNaming#sameWorld`, which flattens `/ \ :` separators and falls back to a trailing-segment match before comparing (`WorldNaming.java:247-261`), so canonical (`<ns>/<key>`) and flattened (`<ns>_<key>`) names compare equal. |
@@ -174,16 +176,11 @@ fixed or open, until re-verified against the current modules.
   Multiverse-Core v5.7 with `AbstractWorldControl`; old line numbers refer to the removed
   `PaperWorldLeaseService`. Re-verify the temp-world dispose/lease lifecycle and the inventory-serializer
   swallow-on-corruption (old F50). See [adapters: Paper](../architecture/platform-and-adapters.md).
-- **All NeoForge findings** (old C3/C4/H8–H12/F25–F29/F45–F49/F53/F60): NeoForge is mid-migration; world
-  naming, inventory serialization, `setHealthScale`, and event-bridge parity all need a fresh pass against
-  the current module. See [adapters: NeoForge](../architecture/platform-and-adapters.md).
-- **NeoForge is not in the tree at all right now** (`packages/` holds only `core` and `module-paper`), so
-  every seam added since the split is **core + Paper only** and NeoForge inherits the inert `default`. The
-  current list: `GameEvents.PlayerJumpGameEvent` (never raised), `PlayerAdapter#duplicateNearbyEntities` /
-  `#supportsEntityDuplication` (→`0`/`false`) and `WorldAdapter#countNearbyEntities` (→`0`). The visible
-  consequence is that the **Jump Multiplies** challenge is selectable but inert there — by design it says so
-  on its HUD (`experience.jumpmultiplies.hud.unsupported`) rather than silently doing nothing, since a seam
-  that returns 0 is otherwise indistinguishable from "nothing was nearby". Port these with the module.
+- **The NeoForge adapter was dropped from the build** — `packages/` holds `core`, `module-paper` and
+  `module-velocity` (the proxy). All NeoForge findings (old C3/C4/H8–H12/F25–F29/F45–F49/F53/F60) are
+  therefore MOOT, not deferred: there is no module to re-verify against. The seams those findings pointed
+  at remain core + Paper; the capability-probe layer (`CapabilityRegistry`, `/sx admin capabilities`)
+  now makes any future "installed but not served" gap visible instead of silent.
 - **Bot race H15** (`sqljs` full-file rewrite vs Java JDBC) and **F58** (unscoped/unthrottled auth-code
   consumption): both in `bot/`, not re-read. The Java side moved account linking to the token-gated
   `/auth/link` endpoint (`ApiServer#handleAuthLink`), which removes the bot's need to write the DB directly
@@ -197,12 +194,11 @@ fixed or open, until re-verified against the current modules.
 ## Keeping this current
 
 The code is the source of truth; this doc is a derived view. The authoritative files are the core anchors
-cited above — chiefly `net/ApiServer.java`, `lib/net/Json.java`, `event/GameEventRouter.java`,
+cited above — chiefly `lib/net/ApiServer.java`, `lib/net/Json.java`, `game/GameEventRouter.java`,
 `platform/PlayerAdapter.java`, `game/AbstractGame.java`, `game/GameManager.java`,
 `command/CoreCommandService.java`, `world/WorldNaming.java`, and `data/RankService.java` — plus the Paper
-(`packages/module-paper`), NeoForge (`packages/module-neoforge`), and bot (`bot/`) code for the deferred
+(`packages/module-paper`) and bot (`bot/`) code for the deferred
 section. Update this file in the **same change** that touches those. Triggers: closing or opening any listed
 finding; adding/removing an HTTP endpoint or changing its auth; changing `resetStatuses`/snapshot capture or
-event-routing fan-out; adding a game mode (re-check `RankService#winPoints` coverage); or finishing the
-NeoForge migration / Paper or bot re-verification (move those items from "Re-verify" into the open log or
-"Recently fixed").
+event-routing fan-out; adding a game mode (re-check `RankService#winPoints` coverage); or completing the
+Paper/bot re-verification (move those items from "Re-verify" into the open log or "Recently fixed").

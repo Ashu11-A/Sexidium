@@ -6,8 +6,8 @@ per client language. Chest GUIs are a separate domain — see
 [menu system & art](menus.md). Game-loop integration of these helpers
 is in [game framework](../architecture/game-framework.md).
 
-Core (`com.sexidium.core`) decides **what** to show and say; the `module-paper` and
-`module-neoforge` adapters decide **how** to render. A game never touches
+Core (`com.sexidium.core`) decides **what** to show and say; the `module-paper`
+adapter decides **how** to render. A game never touches
 Bukkit/Minecraft APIs — it calls `AbstractGame` helpers
 (`announce` / `popup` / `popupAll` / `timerBar` / `track`) that route through
 `ServerAdapter.ui()`, `.messages()`, and `.decor()` to the active adapter.
@@ -28,15 +28,13 @@ Bukkit/Minecraft APIs — it calls `AbstractGame` helpers
 Implementations:
 
 - **Paper** — `PaperUiAdapter` (+ `PaperBossBarHandle`, `PaperScoreboardPanelHandle`,
-  `BetterHudDriver`, `PaperMessageAdapter`, `PaperDecorAdapter`).
-- **NeoForge** — `NeoForgeUiAdapter` (+ `NeoForgeBossBarHandle`,
-  `NeoForgeScoreboardPanelHandle`, `NeoForgeMessageAdapter`). Decor inherits
-  `DecorAdapter.NOOP` — **no decor on NeoForge**.
+  `BetterHudDriver`, `PaperMessageAdapter`, `PaperDecorAdapter`). (A NeoForge UI adapter
+  once existed beside these and was dropped from the build with that module.)
 
 `UiAdapter`'s default `showPopup` (`UiAdapter.java:17-27`) is a fallback with no
 `MessageService`: it renders the message **key path** as the text, routing
 `WIN`/`ELIMINATION`/`OBJECTIVE` to `showTitle(TitleSpec(text,"",150,1200,350))` and
-everything else to `sendActionBar`. Paper and NeoForge override `showPopup` to render
+everything else to `sendActionBar`. Paper overrides `showPopup` to render
 the localized string first.
 
 ---
@@ -109,7 +107,7 @@ catalog entry per item.
 resolves an item's vanilla translation key. Paper
 (`PaperServerAdapter.java:228-237`): `Material.matchMaterial(itemKey.qualifiedName())`
 with a `.value()` fallback, then `material.translationKey()`; returns `""` if
-unresolved. NeoForge: `NeoForgeServerAdapter.java:218`.
+unresolved.
 
 `RaceGame` (`RaceGame.java:583-585`) wraps a non-blank key as the MiniMessage tag
 `<lang:` + key + `>` and passes it via `MessageArg.mini` so it is inserted **raw** and
@@ -119,9 +117,7 @@ when the key is blank (the arg is `objective.itemKey()`). Using `MessageArg.mini
 
 Per-client localization only happens where the rendered string becomes a real
 translatable `Component`: Paper chat (Adventure) and the sidebar line via `Team#prefix`
-Component; NeoForge chat/sidebar via `NeoForgeMiniMessage` →
-`Component.translatable` for `<lang:>`/`<tr:>`/`<translatable:>` tags
-(`NeoForgeMiniMessage.java:16-17,140-141,235-238`).
+Components.
 
 ---
 
@@ -147,9 +143,8 @@ Implementations:
 - `PaperMessageAdapter` (`paper/.../ui/PaperMessageAdapter.java`) — exposes
   `service()` so the Paper UI handles render per-viewer; `broadcast(String)`
   deserializes once via MiniMessage and uses Adventure `server.sendMessage`.
-- `NeoForgeMessageAdapter` — parses MiniMessage to a vanilla `Component` via
-  `NeoForgeMiniMessage` (named/hex colors, decorations, `<lang:>`/`<tr:>`);
-  gradients/rainbow degrade to the first solid color (`NeoForgeMiniMessage.java:23`).
+- `VelocityMessageAdapter` (`module-velocity`) — renders through the same core
+  `MessageService` for proxy-side console/network messages.
 
 ---
 
@@ -199,21 +194,13 @@ only for Bedrock/Geyser viewers (`viewer.isBedrock()`), because those clients ca
 the format between updates and leak the line-count numbers
 (`PaperScoreboardPanelHandle.java:141,162-164`).
 
-**NeoForge** — `NeoForgeScoreboardPanelHandle` is a **server-global** sidebar objective
-(vanilla has no per-player scoreboard server-side); lines render as styled vanilla
-`Component`s in `Language.EN` (server default). `hide()` is best-effort per-client via
-`ClientboundSetDisplayObjectivePacket(SIDEBAR, null)`, clearing the global display only
-when no viewers remain. It uses `BlankFormat.INSTANCE` for the number column
-(`:169-170`), with a 4-arg `addObjective` fallback for older signatures.
-
 ### 4.3 Popups, titles, and action bars
 
 `UiAdapter.showPopup(player, PopupType, LocalizedText)` is the single transient-overlay
 entry point. `PopupType` has 7 values: `INFO, SUCCESS, WARNING, OBJECTIVE, COUNTDOWN,
 ELIMINATION, WIN`.
 
-Routing (Paper `PaperUiAdapter.java:48-61`, NeoForge `NeoForgeUiAdapter.java:34-45`,
-core default `UiAdapter.java:17-27`):
+Routing (Paper `PaperUiAdapter.java`, core default `UiAdapter.java:17-27`):
 
 | PopupType | Rendered as |
 |---|---|
@@ -399,15 +386,28 @@ duplicate:
 #### Row colour (`HudColor`)
 
 A row's words come from a MiniMessage template, so the drivers that render through the component
-pipeline (the vanilla title, the sidebar) obey the `<red>` in the lang file. BetterHud cannot:
-`BetterHudRows` flattens the template to plain text — the markup is gone before the plugin sees the
-line — and the colour comes from the generated layout's own `color` key instead. That key used to be
-hardcoded `white`, so one declaration came out red on one surface and white on the other.
+pipeline (the vanilla title, the sidebar) obey the `<red>` in the lang file. BetterHud used not to:
+`BetterHudRows` flattened the template to plain text, and the colour came from the generated layout's
+own `color` key instead — so one declaration came out red on one surface and white on the other.
 
-`HudColor` (Adventure's `NamedTextColor` names) is declared beside the row and read by the compiler,
-defaulting to `WHITE`. It is said **twice on purpose**: the tag in the lang file for the component
-pipeline, the enum on the element for the atlas renderer, and the two have to agree.
+**That half is fixed, and it was a misreading of the plugin rather than a limit of it.**
+`TextRenderer#parseToComponent` resolves a placeholder's value *first* and parses the result — with
+`Component.text` (so MiniMessage tags really would be literal), **or**, when the text object sets
+`use-legacy-format`, with a legacy serializer. So `BetterHudAssetCompiler` writes
+`use-legacy-format: true` + `legacy-serializer: ampersand` on every row, and `BetterHudRows` serializes
+each rendered line to ampersand codes. BetterHud rebuilds the runs of colour from them, which is also
+what lets **one row carry two colours** — a green tick beside a dimmed label, as the Death Resets boss
+checklist draws.
+
+`HudColor` stays and is still load-bearing, now as the **floor**: it is what a span carrying no code of
+its own is drawn in, which is every span of every template that declares none. Declare it to match the
+template, or leave it at `WHITE` when the template colours itself throughout.
 `ExperienceResetDesignTest` asserts both halves of the reset countdown together.
+
+**Decorations are still lost on the overlay.** Nothing in BetterHud references Adventure's
+`TextDecoration` — its renderer reads `color()` and nothing else — so a `<strikethrough>` is parsed and
+dropped. A consumer that needs "done" to read as done says it with a **glyph** as well as with a colour,
+which is why a ticked boss row is `☑` and not merely a struck `☐`.
 
 #### Sexidium owns its generated assets, and only those
 
@@ -518,7 +518,7 @@ configured anchor.
 
 `DecorAdapter` SPI: `spawn`/`despawn`/`despawnAll` (+ optional `retarget`); `NOOP`
 default. Paper implements it (`PaperDecorAdapter`, `paper/.../adapter/decor/`) rendering
-native `ItemDisplay`/`BlockDisplay`/`TextDisplay`; NeoForge inherits `DecorAdapter.NOOP`.
+native `ItemDisplay`/`BlockDisplay`/`TextDisplay`.
 By design decor is additive, Java-only flair — display entities are invisible on
 Bedrock, so the layer must degrade gracefully.
 
@@ -563,14 +563,13 @@ boss bar/panel and `removeViewer()`s every countdown for **one** player. Invoked
   eliminations (combat/gather/tntwar) that release a victim without going through
   `GameManager`.
 
-This per-match `hide()` is the **cross-platform safety net**: on NeoForge
-`PlayerAdapter.clearBossBars()` is a no-op (`PlayerAdapter.java:137-138`, it cannot
-enumerate a player's bars), so per-match `BossBarHandle.hide(player)` is the only
-reliable drop. On Paper, `resetStatuses()` also clears lingering bars via
-`clearBossBars()` (`PaperPlayerAdapter.java:221-227` iterates `player.activeBossBars()`),
+This per-match `hide()` is the **safety net**: a platform cannot always enumerate a
+player's boss bars to wipe them wholesale, so per-match `BossBarHandle.hide(player)` is
+the reliable drop. On Paper, `resetStatuses()` also clears lingering bars via
+`clearBossBars()` (`PaperPlayerAdapter.java` iterates `player.activeBossBars()`),
 but `releasePlayerUi` runs first so behavior matches.
 
-**Respawn-in-place opt-out:** `handleRespawn` (`GameManager.java:419-434`)
+**Respawn-in-place opt-out:** `handleRespawn` (`GameManager.java:272` → `PlayerSessionCoordinator.java:326`)
 early-returns when `activeMatch.game().handlesOwnRespawn()` is `true` — open-ended
 experiences keep the player in-world and run their own `PlayerRespawnGameEvent` handler
 instead of being pulled to the lobby (`:429`).
@@ -611,15 +610,6 @@ hunter).
 
 ## 8. Per-platform parity & validation notes
 
-- **[medium] NeoForge boss-bar titles are not per-viewer localized.**
-  `createBossBar` and `NeoForgeBossBarHandle.title` render via
-  `renderMini((CommandSource) null, …)` = server default language, keeping no viewer
-  set (`NeoForgeBossBarHandle.java:20-24`, `NeoForgeUiAdapter.java:26`). Paper
-  re-renders per viewer on `show()`/`title()`.
-- **[medium] NeoForge scoreboard panel is server-global and EN-only.**
-  `render()` uses `Language.EN` (`NeoForgeScoreboardPanelHandle.java:198-208`), with
-  best-effort per-client hide; non-participants may see the match HUD. Documented
-  divergence from Paper's per-player, per-language panel.
 - **[low] Paper boss-bar title is shared, last-viewer-wins.** `PaperBossBarHandle`
   wraps one Adventure `BossBar` shared by all viewers but sets `bossBar.name(...)` from
   each viewer's render (`PaperBossBarHandle.java:32-58`). With a mixed-language audience
@@ -649,7 +639,7 @@ i18n package `core/i18n/` (`MessageService`, `MessageKey`, `Language`, `Localize
 `MessageArg`) plus `lang/en.properties` + `lang/pt.properties`; `core/decor/`; the
 lifecycle helpers in `AbstractGame` and `GameManager`; the Paper adapters
 (`PaperUiAdapter`, `PaperScoreboardPanelHandle`, `PaperBossBarHandle`, `BetterHudDriver`,
-`PaperDecorAdapter`) and the NeoForge UI adapters; and `config.yml` `messages.*` /
+`PaperDecorAdapter`); and `config.yml` `messages.*` /
 `ui.decor.*`. Update this doc in the **same change** that touches those files. Triggers:
 a new UI/i18n/decor class or adapter; any signature/behavior change to a handle, the
 popup/panel routing, the scoreboard rendering, or language resolution; a `MessageKey`

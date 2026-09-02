@@ -409,15 +409,20 @@ The jar now lives in a **versioned store** and each node reaches its own build t
 /srv/sexidium/server/builds/
   COUNTER  LATEST
   b0042-9f3c1a77b0de/
-    Sexidium-Paper-1.0.0.jar  Sexidium-Velocity-1.0.0.jar
-    manifest.txt              deps/          PROMOTED
+    sexidium-paper-26.1.2+16.jar  Sexidium-Velocity-1.0.0.jar
+    manifest.txt                  deps/          PROMOTED
 
 /srv/nodes/worker-2/
   pluginjars/                        <- the dir passed to --add-extra-plugin-dir
-    Multiverse-Core-5.7.3.jar  -> /srv/sexidium/server/plugins/…   (shared, one inode)
-    Sexidium-Paper-1.0.0.jar   -> /srv/sexidium/server/builds/b0042-…/…
+    Multiverse-Core-5.7.3.jar        -> /srv/sexidium/server/plugins/…   (shared, one inode)
+    sexidium-paper-26.1.2+16.jar     -> /srv/sexidium/server/builds/b0042-…/…
   sexidium-build.pin                 <- build=, previous=, sha256=
 ```
+
+The Paper jar's name is the canonical one from `minecraft-targets.properties`
+(`sexidium-paper-<floor>+<counter>.jar`). A build staged before a floor change keeps the name
+of its era in the store — the manifest records it (`paper-jar-name=`) and pinning resolves the
+bytes through it — but the symlink a node sees always carries today's canonical name.
 
 - **The build id is content-addressed**: `b<counter>-<sha256[0:12]>`. Re-running a build over
   unchanged source produces the *same* directory, so a resumed pipeline's BUILD stage is a no-op.

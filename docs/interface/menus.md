@@ -25,19 +25,17 @@ renders per target:
 | Java + pack loaded | `PaperMenuAdapter` chest | Glyph background (or full baked scene) + `item_model` icons |
 | Java + pack declined / no pack | `PaperMenuAdapter` chest | None — plain material icons, plain title |
 | Bedrock via Geyser/Floodgate | `PaperFormRenderer` (Cumulus `SimpleForm`) | None — Java packs never reach Bedrock; native touch UI instead |
-| NeoForge client | `NeoForgeMenuAdapter` container | **None** — a plain `GENERIC_9xN` container carrying only the `MenuSentinel` marker |
 
-> **NeoForge has no custom art today.** The adapter opens a plain marked vanilla container and renders no
-> glyphs, no `item_model`s, and no scene art — it has zero references to `MenuArt`, `SexidiumResourcePack`,
-> or `setItemModel`. The marked title is a hook for a hypothetical client overlay that does not exist in
-> this repo. Custom art on NeoForge is aspirational. ([`NeoForgeMenuAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java))
+> **A modded-client hook, not a renderer.** Titles carry the invisible `MenuSentinel` marker so a
+> hypothetical modded client could re-skin Sexidium's menus; no such client overlay exists in this repo,
+> and every shipped viewer gets one of the three rows above.
 
 All menu logic lives in platform-agnostic core; the only seams are `PlayerAdapter` (who/where) and the
 `MenuAdapter` SPI (render this view).
 
 ## Declarative framework core types
 
-`com.sexidium.core.menu` holds the whole model. None of it touches Bukkit/NeoForge.
+`com.sexidium.core.menu` holds the whole model. None of it touches Bukkit/Minecraft.
 
 | Type | Role |
 |---|---|
@@ -48,7 +46,7 @@ All menu logic lives in platform-agnostic core; the only seams are `PlayerAdapte
 | [`MenuCatalog`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuCatalog.java) | Ordered registry of hub tabs (`register` / `tabs` / `visibleFor` / `byId`) |
 | [`MenuTab`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuTab.java) | One self-describing `/sx` interface |
 | [`MenuForms`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuForms.java) | Flattens a sparse view into a Bedrock-form action list + body labels |
-| [`MenuSentinel`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuSentinel.java) | Marks a NeoForge title so a modded client could recognise it |
+| [`MenuSentinel`](../../packages/core/src/main/java/com/sexidium/core/menu/MenuSentinel.java) | Marks a menu title (invisible code point) so a modded client could recognise it |
 
 ### MenuView art opt-ins
 
@@ -75,7 +73,7 @@ while the menu is open (`PaperMenuAdapter.animationTick`/`animatePlayerMenu`, cl
 Minigames grid uses this: each mode tile shows a **distinct per-mode colour gradient** that sweeps (the
 `nameFrames` rotate the gradient colours) plus a **live "playing now" count** (`GameManager.playersInMode`
 + the quick-play queue) badged as the stack size. The static `name()` is always a valid fallback for
-no-animation renderers (Bedrock forms, NeoForge, tests).
+no-animation renderers (Bedrock forms, tests).
 
 ### The `/sx` hub is a registry
 
@@ -114,11 +112,13 @@ viewer). See [UI interaction system](ui-interaction-system.md).
 
 It reads the same `MenuButton`s the chest renders, so navigation is reused unchanged.
 
-### MenuSentinel (NeoForge marker)
+### MenuSentinel (modded-client marker)
 
 Prefixes a title with one invisible Private-Use code point `U+E000`. `encode` / `isSexidium` / `strip` are
 pure and idempotent. A modded client could check the marker and re-skin the screen; a vanilla/Geyser client
-sees the plain chest because the marker carries no glyph. The consuming overlay is not in this repo.
+sees the plain chest because the marker carries no glyph. The consuming overlay is not in this repo (the
+NeoForge adapter that originally motivated it was dropped from the build; the marker stays because it is
+invisible, harmless, and forward-compatible).
 
 ## MenuArt: the single source of truth
 
@@ -311,7 +311,7 @@ any player who loaded the pack. Accepted because the pack is server-gated.
 
 ### Hosting
 
-[`ResourcePackServer.start()`](../../packages/core/src/main/java/com/sexidium/core/net/ResourcePackServer.java)
+[`ResourcePackServer.start()`](../../packages/core/src/main/java/com/sexidium/core/lib/net/ResourcePackServer.java)
 — **lives in `core.net`, not `core.menu.pack`** — builds the pack from `bundled/menupack-textures` (staged
 art) + `manifest.txt`, then either:
 
@@ -394,19 +394,6 @@ roster buttons, and re-schedules each tap onto the main thread as a plain `LEFT`
 plugin is set, the player `isBedrock()`, and `PaperGeyser.bedrockUiAvailable()`; a `LinkageError` disables
 forms permanently (missing Cumulus), a `RuntimeException` falls back to the chest once. The Cumulus API is a
 runtime softdepend, never shaded.
-
-### NeoForge
-
-- [`NeoForgeMenuAdapter`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuAdapter.java)
-  opens a plain `GENERIC_9xN` `SimpleContainer` via reflection, with the title wrapped in
-  `MenuSentinel.encode`. `close` calls `closeContainer()`.
-- [`NeoForgeMenuClassGenerator`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClassGenerator.java)
-  emits, once per JVM, an ASM subclass of `ChestMenu` that is read-only: `clicked` forwards to
-  `handleClicked`, `quickMoveStack` returns `EMPTY`, `stillValid` returns `true`. (The deobfuscated
-  `net.minecraft.*` classes aren't on the compile classpath in this build, hence ASM + reflection.)
-- [`NeoForgeMenuClickHandler`](../../packages/module-neoforge/src/main/java/com/sexidium/neoforge/adapter/menu/NeoForgeMenuClickHandler.java)
-  routes a click to `NeoForgeMenuAdapter.dispatchClick`, which looks up `view.button(slot)` and invokes its
-  `onClick` with a `MenuContext` (vanilla click/drag mapped to `ClickType` via `mapClickType`).
 
 ## Player-facing screens and mechanics
 
@@ -524,16 +511,13 @@ as **text**, asserting a source string was absent, which any re-spelling of the 
 an `if`, a hop through `ClickType.isLeftClick()`, which answers true for DOUBLE_CLICK) would have
 passed while the bug was back.
 
-(`NeoForgeMenuAdapterTest` used to be listed here. There is no `packages/module-neoforge` in this
-tree — the NeoForge adapter and its test are aspirational, as §NeoForge above says.)
-
 ## Keeping this current
 
 The code is the source of truth; this doc is a derived view. The authoritative sources are
 `com.sexidium.core.menu` (especially `MenuArt`, `MenuService`, `MenuView`, and the yml registry
 `menu/backgrounds.yml` + `BackgroundCatalog`), `com.sexidium.core.menu.scene` (+ `scene.bake.SceneBaker`),
 `com.sexidium.core.menu.pack.SexidiumResourcePack`, `com.sexidium.core.net.ResourcePackServer`, the
-Paper/NeoForge `adapter/menu` packages, `scripts/art.py` + `scripts/init-paper.sh`, and the
+Paper `adapter/menu` package, `scripts/art.py` + `scripts/init-paper.sh`, and the
 `ui.resource-pack` block in `config.yml`. Update this doc in the same change that touches any of them.
 Triggers: a new class/scene/template added to the domain; a background/font entry or geometry change in
 `backgrounds.yml`; a change to a `MenuArt` icon table, glyph metric, or `shift`/scene geometry; a new

@@ -2,8 +2,9 @@
 
 You are working on Sexidium's **menu system** — the declarative, cross-platform chest GUIs. Reference:
 [menus.md](../interface/menus.md) and [ui-interaction-system.md](../interface/ui-interaction-system.md). The golden rule: one
-abstract `MenuView` is built in core and rendered per platform (Paper chest, Bedrock Cumulus form,
-NeoForge plain container) — **a technique is only acceptable if it has a defined answer on all three.**
+abstract `MenuView` is built in core and rendered per audience (Java players get the Paper chest,
+Bedrock players get a native Cumulus form) — **a technique is only acceptable if it has a defined answer
+on all three surfaces: Java with the pack, Java without it, and Bedrock.**
 
 ## Key files
 

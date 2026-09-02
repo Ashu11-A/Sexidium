@@ -2,7 +2,7 @@
 
 You are working on Sexidium's **command tree** (`/sx`, `/sexidium`, plus the global aliases `/menu`,
 `/exit`/`/leave`, `/lobby`, `/friend`). One platform-agnostic service owns every command; the adapters
-only forward raw `String[]` argv — so a command added in core exists identically on Paper and NeoForge.
+only forward raw `String[]` argv — so a command added in core exists identically on Paper and Velocity.
 Reference: [commands.md](../interface/commands.md).
 
 ## Key files
@@ -12,7 +12,7 @@ Reference: [commands.md](../interface/commands.md).
 | Root dispatch + permission buckets | `packages/core/src/main/java/com/sexidium/core/command/CoreCommandService.java` (`ROOT_ORDER`, `PLAYER_SUBCOMMANDS`, `ADMIN_SUBCOMMANDS`, `hasRootPermission`) |
 | Focused handlers | `…/command/GameCommands.java`, `ExperienceCommands.java`, `LobbyCommands.java`, `FriendCommands.java`, `AdminCommands.java`, `BotCommands.java`, `NpcCommands.java`, `RaceCommands.java`, `TntWarCommands.java`, `CombatCommands.java`, `MapEditorCommands.java` |
 | Shared context | `…/command/CommandContext.java` (`ctx.core`, `ctx.server`, `send`, `filter`, `requirePlayer`, `playerSource`, `participants`, `playerNames`), `CommandText.java` |
-| Adapter bridges | Paper: command registration + `PaperAliasCommand` (global aliases prepend their token and forward); NeoForge mirror |
+| Adapter bridges | Paper: command registration + `PaperAliasCommand` (global aliases prepend their token and forward); Velocity: the proxy-side command relay |
 | i18n | `…/core/i18n/MessageKey.java` + `packages/core/src/main/resources/lang/en.properties` **and** `pt.properties` |
 
 ## How to add a subcommand

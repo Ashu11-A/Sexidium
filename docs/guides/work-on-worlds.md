@@ -73,8 +73,7 @@ core; platform backends are thin executors.
   alone while a *changed* one replaces it (previous copy moved to `<name>.replaced-<timestamp>`, newest one
   kept). A folder with no stamp is **adopted**, never replaced — that is what keeps an upgrade from wiping
   maps seeded by an older jar. The **lobby** has no equivalent: it is a live loaded world by then, so
-  `LobbyBundle` stays seed-if-missing. NeoForge does not extract bundles — note parity impacts in
-  [known-issues.md](../reference/known-issues.md).
+  `LobbyBundle` stays seed-if-missing.
 
 ## Editing a map (tooling)
 
@@ -103,7 +102,8 @@ Facts worth keeping:
   back by hand. See [`assets/schematics/README.md`](../../assets/schematics/README.md).
 - **Client mods install into their own game directory** (`~/.minecraft/sexidium-world-editing`), not the
   shared `~/.minecraft/mods`: one mods folder is read by every profile, so Fabric jars sitting beside
-  NeoForge ones break the other loader's launch.
+  NeoForge ones break the other loader's launch. (The client-side modding here is tooling only —
+  Sexidium itself stays server-side.)
 - **Client mod versions are hard-pinned** to the server's Minecraft version (read from
   `test/paper/.mc-version`). A mod for another version does not degrade — it aborts the launch — so the
   installer skips a mod with no matching build rather than installing a mismatched one.

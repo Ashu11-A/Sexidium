@@ -3,12 +3,13 @@
 The game framework is the platform-agnostic **match engine** in
 [`packages/core/src/main/java/com/sexidium/core/game`](../../packages/core/src/main/java/com/sexidium/core/game)
 (plus the [`event`](../../packages/core/src/main/java/com/sexidium/core/event) package and
-[`util/Countdown`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java)). It registers
+[`util/Countdown`](../../packages/core/src/main/java/com/sexidium/core/lib/Countdown.java)). It registers
 game *modes*, launches a mode as a *match* bound to a (usually temporary) world, ticks
 countdowns/timers, routes native Minecraft events into the active game(s), and tears everything down
-when a match ends or a player leaves. Nothing in this package references Bukkit or NeoForge — games
+when a match ends or a player leaves. Nothing in this package references Bukkit or Minecraft — games
 talk only to the platform SPI (`ServerAdapter`, `PlayerAdapter`, `WorldAdapter`, …) and to immutable
-model records, so the identical engine runs on both the Paper and NeoForge adapters.
+model records, so the identical engine runs on the Paper adapter (and its proxy-side counterpart on
+Velocity).
 
 **Scope.** This doc covers the **engine only**. For the concrete game *content* see
 [minigames.md](../gameplay/minigames.md) (the 5 minigames) and
@@ -109,7 +110,7 @@ flowchart TD
     end
 
     subgraph Events[Event delivery]
-        BRIDGE["EventBridge (Paper/NeoForge)"] --> ROUTER[GameEventRouter.handle]
+        BRIDGE["EventBridge (Paper)"] --> ROUTER[GameEventRouter.handle]
         ROUTER -- "join/quit/respawn/world-change" --> GM
         ROUTER -- "everything (incl. lifecycle)" --> GAME
     end
@@ -132,7 +133,7 @@ flowchart TD
 | `GameContext` | [`GameContext.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameContext.java) | Dependency carrier handed to every game. |
 | `ActiveMatch` | [`ActiveMatch.java`](../../packages/core/src/main/java/com/sexidium/core/game/ActiveMatch.java) | Immutable handle bundling matchId, mode, game, world lease. |
 | `GameState` | [`GameState.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameState.java) | `IDLE`, `RUNNING`, `STANDBY`, `ENDED`. |
-| `Countdown` | [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) | Self-contained 1-second-tick boss-bar timer. |
+| `Countdown` | [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/lib/Countdown.java) | Self-contained 1-second-tick boss-bar timer. |
 | `GameEvent` / `GameEventRouter` | [`event/`](../../packages/core/src/main/java/com/sexidium/core/event) | Sealed event hierarchy + dispatcher. |
 
 ---
@@ -281,7 +282,7 @@ manager via `gameContext.games()`.
 
 The shared `onWorldFailure` clears `starting`, frees the reservations, and sends `TEMP_WORLD_FAILED`.
 
-`launch(modeId, game, lease, participants, initiator, modeArgs)` (`GameManager.java:647`): free the
+`launch(modeId, game, lease, participants, initiator, modeArgs)` (`GameLauncher.java:328`): free the
 reservations, re-`sanitize` + re-check `minPlayers` (on failure: close lease + clear `starting`), mint a
 random `matchId`, build the `ActiveMatch`, populate `matches` + `playerIndex`, clear `starting`, call
 `events().registerGame(game)`, teleport each participant via **`game.entrySpawn(participant,
@@ -335,7 +336,7 @@ spawn is resolvable it logs a warning and bails rather than stranding the player
 enter/resume a specific experience). Gates: online (`PLAYER_OFFLINE`), match still live (`NOT_RUNNING`),
 not already in a match (`ALREADY_IN_MATCH`).
 
-`joinInProgress(player, modeId, relatedPlayerIds)` (`GameManager.java:487`) joins a running match **of a
+`joinInProgress(player, modeId, relatedPlayerIds)` (`GameManager.java:310` → `PlayerSessionCoordinator.java:370`) joins a running match **of a
 mode**. When `relatedPlayerIds` is non-null the joiner may enter only a match that already contains one
 of those players (their party / friends), else `JoinResult.NOT_RELATED`; a `null` set means no
 relationship restriction (internal/admin). This is the social gate the old doc reported as missing.
@@ -344,7 +345,7 @@ relationship restriction (internal/admin). This is the social gate the old doc r
 public enum JoinResult { JOINED, NOT_RUNNING, NOT_RELATED, ALREADY_IN_MATCH, PLAYER_OFFLINE }
 ```
 
-`admit(player, match)` (`GameManager.java:524`): `resetStatuses`, index the player, teleport via
+`admit(player, match)` (`PlayerSessionCoordinator.java:407`): `resetStatuses`, index the player, teleport via
 `game.entrySpawn`, `game.onParticipantAdded(player)` in a try/catch, `persist`.
 
 `matchByWorldName(worldName)` matches on the **last path segment** (experience live world names are
@@ -405,14 +406,14 @@ fugitive is disconnected.
 - `prepareShutdown()`: for each reconnectable match, save the snapshot (players marked `DISCONNECTED`)
   via `matchRepository.saveBlocking` and `preserveSingle(worldName)`; non-reconnectable matches are
   `endMatch`'d with `STOP_SERVER_SHUTDOWN`.
-- `rehydrate(matchId)` (`GameManager.java:751`): reacquire the world (`reacquirePersistent` for
+- `rehydrate(matchId)` (`PendingMatchStore.java:85`): reacquire the world (`reacquirePersistent` for
   experience worlds, `reacquireByName` otherwise; `null` worldName → no lease), recreate the game from
   the registry, `events().registerGame`, repopulate `playerIndex`, and `game.restore(snapshot)`. On
   failure → `discardPending`.
-- `discardPending(matchId, playerId)` (`GameManager.java:567`): drop the pending entry; delete its world
+- `discardPending(matchId, playerId)` (`PendingMatchStore.java:43`): drop the pending entry; delete its world
   via `discardByName` **unless** it is an `ExperienceGame` world (persistent, player-owned, never deleted
   on a stale sweep). `discardStalePending` sweeps all pending entries.
-- `persist(ActiveMatch)` (`GameManager.java:704`) is a no-op unless `game.isReconnectable()`; it uses
+- `persist(ActiveMatch)` (`MatchLifecycle.java:82`) is a no-op unless `game.isReconnectable()`; it uses
   `saveAsync`.
 - `protectedWorldNames()` / `pendingWorldNames()` expose world names that temp-world GC must not reap
   (live + reconnect-pending matches).
@@ -482,7 +483,7 @@ global `game.*` key, so a value lives in one place but a single mode can diverge
 
 ### `Countdown`
 
-[`Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java) is a
+[`Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/lib/Countdown.java) is a
 self-contained boss-bar timer:
 
 - `start(viewers)` creates a boss bar and `runTimer(this::tick, 0, 20)` (1 tick per second).
@@ -499,7 +500,7 @@ Games use `AbstractGame.timerBar(...)` rather than instantiating `Countdown` dir
 
 ### The sealed hierarchy
 
-[`GameEvent.java`](../../packages/core/src/main/java/com/sexidium/core/event/GameEvent.java) is a sealed
+[`GameEvent.java`](../../packages/core/src/main/java/com/sexidium/core/game/GameEvents.java) is a sealed
 interface:
 
 ```java
@@ -534,7 +535,7 @@ veto a vanilla action by calling `setCancelled(true)` inside `handle()`.
 
 ### Routing
 
-[`GameEventRouter`](../../packages/core/src/main/java/com/sexidium/core/event/GameEventRouter.java) takes
+[`GameEventRouter`](../../packages/core/src/main/java/com/sexidium/core/game/GameEventRouter.java) takes
 `(ServerAdapter, GameManager, LobbyManager)`. Its `handle()` switch-dispatches:
 
 - **Join / Quit / Respawn / ChangedWorld** are special-cased into the matching `GameManager` hook **and**
@@ -603,9 +604,10 @@ calls `game.handle(event)` on **every** active match.
    `experiences.modes.mymode.*`) to `config.yml`, and any `MessageKey` you announce to the localization
    files.
 
-The registry is platform-agnostic, so the new mode is immediately available on both Paper and NeoForge
-with no adapter changes. If your mode needs a platform capability that is a `default` no-op in the SPI,
-verify both adapters implement it — see [platform-and-adapters.md](platform-and-adapters.md).
+The registry is platform-agnostic, so the new mode is immediately available on every adapter with no
+adapter changes. If your mode needs a platform capability that is a `default` no-op in the SPI,
+verify it is implemented where it matters — see [platform-and-adapters.md](platform-and-adapters.md)
+(and `/sx admin capabilities` on a live node).
 
 ---
 
@@ -642,7 +644,7 @@ The **code is the source of truth**; this doc is a derived view. Authoritative f
 `AbstractGame.java`, `Game.java`, `GameRegistry.java`, `CoreGameRegistryInitializer.java`,
 `GameModeDescriptor.java`, `ActiveMatch.java`, `GameState.java`, `modes/BaseTimedGame.java`),
 [`event/`](../../packages/core/src/main/java/com/sexidium/core/event) (`GameEvent.java`,
-`GameEventRouter.java`), and [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/util/Countdown.java).
+`GameEventRouter.java`), and [`util/Countdown.java`](../../packages/core/src/main/java/com/sexidium/core/lib/Countdown.java).
 Update **this doc in the same change** that touches those files. Triggers: a new class/file in the game
 or event package, a new/removed registered mode in `CoreGameRegistryInitializer`, a new `Game` SPI method
 or signature/behavior change, a new `GameEvent` permit, or a config key added/removed under

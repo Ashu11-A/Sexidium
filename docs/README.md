@@ -1,7 +1,8 @@
 # Sexidium Documentation
 
 > Multi-platform Minecraft party/minigame plugin: a platform-agnostic **core** that runs
-> unchanged on **Paper** and **NeoForge**, with a bundled **Discord bot**, a localhost
+> unchanged on **Paper** game servers and the network's **Velocity** proxy, with a bundled
+> **Discord bot**, a localhost
 > **HTTP API**, persistent **ranks**, a unified **lobby** (party + queue + friends), managed
 > **disposable match worlds**, player-built persistent **Experiences**, and competitive
 > **minigames**.
@@ -14,15 +15,16 @@ footer naming the files it tracks. See [§4 Maintenance policy](#4-documentation
 
 ## 1. Project overview
 
-Sexidium is one plugin/mod built around a strict **core ↔ adapter** split. All gameplay,
+Sexidium is one plugin built around a strict **core ↔ adapter** split. All gameplay,
 command, social, persistence, and networking logic lives in a platform-agnostic module
 (`packages/core`, package `com.sexidium.core`) that never references a Bukkit or
-Minecraft/NeoForge class. Each server platform supplies a thin **adapter** module —
-`packages/module-paper` (modern Paper/Adventure API) and `packages/module-neoforge`
-(reflection-based, no compile-time Minecraft deps) — implementing the core's platform SPI
-(`ServerAdapter`, `PlayerAdapter`, `WorldAdapter`, `SchedulerAdapter`, `UiAdapter`, event
-bridge, and ~14 more). The core is handed exactly one `ServerAdapter` at startup and drives
-everything through it, so the same engine produces identical behavior on both platforms.
+Minecraft class. Each runtime supplies a thin **adapter** module —
+`packages/module-paper` (modern Paper/Adventure API, for every game server) and
+`packages/module-velocity` (the proxy half of the networked deployment) — implementing the
+core's platform SPI (`ServerAdapter`, `PlayerAdapter`, `WorldAdapter`, `SchedulerAdapter`,
+`UiAdapter`, event bridge, and ~14 more; Velocity implements the proxy-side subset,
+`NodeRuntime`). The core is handed exactly one adapter at startup and drives everything
+through it.
 
 Gameplay is organized as **matches**. An admin runs `/sx start minigames <mode> [players]`;
 the core gathers a roster, leases a disposable temporary world, teleports participants in, and
@@ -50,15 +52,16 @@ and gives ranks a Discord front end (`/rank`, `/leaderboard`, `/mc`, `/auth`, `/
 
 | Path | What lives here |
 |------|-----------------|
-| [`packages/core`](../packages/core) | Platform-agnostic engine: game framework (`game/`), 5 minigames + 27 composable challenges (`game/modes/minigames/`, `game/experience/`), experiences/teams/persistence (`game/experience/`, `game/team/`, `game/persist/`), event model + router (`event/`), command service (`command/`), unified lobby/social (`lobby/`), worlds (`world/`), menus + scene art (`menu/`), UI/i18n/decor (`i18n/`, `decor/`), ranks/auth/data (`rank/`, `auth/`, `data/`), networking + bot manager (`net/`, `bot/`), platform SPI (`platform/`), bundled resources (`config.yml`, DB migrations). |
+| [`packages/core`](../packages/core) | Platform-agnostic engine: game framework (`game/`), 5 minigames + 27 composable challenges (`game/modes/minigames/`, `game/experience/`), experiences/teams/persistence (`game/experience/`, `game/team/`, `game/persist/`), event model + router (`game/GameEvents.java`, `game/GameEventRouter.java`), command service (`command/`), unified lobby/social (`world/lobby/`), worlds (`world/`), menus + scene art (`menu/`), UI/i18n/decor (`i18n/`, `decor/`), ranks/auth/data (`data/`, `auth/`), networking + bot manager (`network/`, `lib/net/`, `bot/`), platform SPI (`platform/`, incl. `platform/capability/` + `platform/version/`), bundled resources (`config.yml`, DB migrations). |
 | [`packages/module-paper`](../packages/module-paper) | Paper adapter: `PaperSexidiumPlugin` bootstrap, `PaperEventBridge`, Adventure/Bukkit player/world/scheduler/UI/inventory/menu adapters, `PaperWorldControl` (unified world layer) + Multiverse lobby, the BetterHud HUD driver, native scoreboard panels, kits, `plugin.yml`. |
-| `packages/module-neoforge` *(not in the tree)* | NeoForge adapter (MC 1.21.x): reflection-only port via `NeoForgeReflector`; `NeoForgeEventBridge` synthesizes move/inventory/sneak events from `PlayerTickEvent`; cooperative tick scheduler; hand-rolled vanilla world creation; ASM-generated chest-menu classes; global scoreboard/boss-bar UI. |
+| [`packages/module-velocity`](../packages/module-velocity) | Velocity proxy adapter: implements core's proxy-side SPI (`NodeRuntime`) only — node identity, cross-node messaging, auth relay — and is a hard *depend* of nothing on the game servers. Used solely by the networked deployment. |
 | [`bot/`](../bot) | TypeScript Discord bot (`bun` + discord.js + `@constatic/base`). Slash commands under `src/discord/`, auth/api helpers, `src/index.ts` entry. Launched and supervised by the Java `BotManager`; **not** a Gradle subproject (bundled as a resource into the adapter jars). |
 
-The Gradle build (`settings.gradle.kts`) includes `:packages:core`, `:packages:module-paper`, and
-`:packages:module-velocity` (the proxy plugin used by the networked deployment — see
-[operations/deployment.md](operations/deployment.md)). **`:packages:module-neoforge` is not in the build**: the NeoForge
-adapter described above is documented history, not something the build currently produces.
+The Gradle build (`settings.gradle.kts`) includes exactly these three projects: `:packages:core`,
+`:packages:module-paper` and `:packages:module-velocity`. A NeoForge adapter was built once
+(reflection-only, MC 1.21.x) and later dropped from the build; its residue in these docs has been
+removed. The experiment's lesson — a speculative module costs docs, tests and build budget before it
+earns a second implementation — is recorded in [reference/tech-decisions.md](reference/tech-decisions.md).
 
 ---
 
@@ -72,7 +75,7 @@ the "what is *not* here" boundary; the tables below are the flat view.
 | Document | Covers |
 |----------|--------|
 | [architecture/overview.md](architecture/overview.md) | System map: the core ↔ adapter split, the `SexidiumCore` wiring graph, startup/shutdown lifecycle, command/event flow, and a subsystem inventory pointing at every page below. **Start here.** |
-| [architecture/platform-and-adapters.md](architecture/platform-and-adapters.md) | The platform SPI (`ServerAdapter` & friends, value-model records/enums, default-method capability degradation, noop/headless impls) **and** both adapter implementations (Paper, NeoForge) with a parity-gaps table. |
+| [architecture/platform-and-adapters.md](architecture/platform-and-adapters.md) | The platform SPI (`ServerAdapter` & friends, value-model records/enums, default-method capability degradation, noop/headless impls) **and** both adapter implementations (the Paper game-server adapter and the Velocity proxy adapter) with a parity-gaps table. |
 | [architecture/game-framework.md](architecture/game-framework.md) | The match engine only: `GameManager`, `ActiveMatch`, `AbstractGame`/`BaseTimedGame`, `GameState`, registry/descriptors/factories, countdowns, event routing, mid-match join, and the start → run → end → teardown lifecycle. |
 
 ### [`gameplay/`](gameplay/) — what players play
@@ -126,7 +129,7 @@ tests will fail, and which doc to update in the same change. Each ends in a chec
 | [guides/add-a-minigame.md](guides/add-a-minigame.md) | Add/modify a minigame: descriptor registration, base-class choice, battle maps + in-world editor, HUD, awards/win flow, menu icons, config. |
 | [guides/add-a-menu-screen.md](guides/add-a-menu-screen.md) | Add/modify a chest-GUI screen: `MenuService` facade rules, the cross-play (Bedrock) constraints, custom art tables, per-player state hygiene. |
 | [guides/add-a-command.md](guides/add-a-command.md) | Add/modify a command: dispatch buckets, the `/sx admin` arg-reslice pattern, tab completion, bilingual i18n. |
-| [guides/add-a-platform-capability.md](guides/add-a-platform-capability.md) | Add a platform capability: the default-method seam pattern, capability flags, Paper/NeoForge parity, POJO-fake testing. |
+| [guides/add-a-platform-capability.md](guides/add-a-platform-capability.md) | Add a platform capability: the default-method seam pattern, capability flags + runtime probing (`CapabilityRegistry`, `/sx admin capabilities`), POJO-fake testing. |
 | [guides/work-on-worlds.md](guides/work-on-worlds.md) | Work on managed worlds: leasing seams, naming, linked dimensions, void generation, safe spawn, the structure/loot generation engine, bundled worlds, map-editing tooling. |
 | [guides/work-on-the-bot.md](guides/work-on-the-bot.md) | Work on the Discord bot / RPC bridge: the Zod contract as source of truth, slash-command registration, rendered cards, supervision rules. |
 | [guides/research-a-youtube-challenge.md](guides/research-a-youtube-challenge.md) | Turn a YouTuber "Minecraft, but…" format into a challenge: harvesting titles/descriptions/transcripts with `yt-dlp`, mining them for the rule and its edge cases, and designing the server-safe bound (radius + per-tick budget + catch-up) before implementing. Front-end to `add-a-challenge.md`. |
@@ -166,9 +169,8 @@ describe it are updated in the *same* change. Treat doc drift as a bug.
 
 ## 5. Building & running
 
-Gradle multi-module build (JDK 25; built/tested against Paper `26.1.2`). `settings.gradle.kts` has
-`:packages:core`, `:packages:module-paper` and `:packages:module-velocity` — the NeoForge module
-described in these docs is not currently part of the build.
+Gradle multi-module build (JDK 25; built/tested against Paper `26.1.2`). `settings.gradle.kts`
+includes `:packages:core`, `:packages:module-paper` and `:packages:module-velocity`.
 
 ```bash
 ./gradlew build     # compiles and runs the JUnit suites (check → test → jacocoTestReport)
@@ -182,7 +184,10 @@ run it as `SX_TEST_STRICT=1 scripts/test/run.sh` to make a skip a failure.
 
 Jars are collected under `build/libs/`:
 
-- `build/libs/paper/` — Paper jars (`Sexidium-Paper-*.jar`).
+- `build/libs/paper/` — the Paper jar under its canonical name
+  (`sexidium-paper-<mc>+<counter>.jar`, e.g. `sexidium-paper-26.1.2+16.jar`) plus one alias per
+  supported Minecraft version — identical bytes, one name each; both come from
+  `minecraft-targets.properties`.
 - `build/libs/velocity/` — the proxy plugin, used only by the networked deployment.
 - Plain jars carry the bot **source** (need `bun` on `PATH` if the bot is enabled); the
   `-x64` / `-arm64` jars bundle a matching Bun runtime. `node_modules` is never packaged — the
