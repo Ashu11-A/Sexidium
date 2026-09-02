@@ -143,4 +143,35 @@ class WorldRegistrarDesignTest {
     assertTrue(body.contains("siblingKeySuffixes()"),
         "the Nether and End travel with their overworld and were never unregistered at all");
   }
+
+  @Test
+  @DisplayName("a TEMP world's registration is forgotten on release too, not only experiences'")
+  void tempWorldsAreForgottenToo() {
+    String source = paper();
+    int forget = source.indexOf("protected void backendForgetRegistration(");
+    assertTrue(forget > 0);
+    String body = source.substring(forget);
+    body = body.substring(0, body.indexOf("\n  }"));
+
+    assertTrue(body.contains("naming.tempNamespace()"),
+        "experienceKeyPathOf is null for temp worlds, and bailing out there left every deleted"
+            + " arena on Multiverse's books for ever — one autoload failure per entry, every boot");
+  }
+
+  @Test
+  @DisplayName("the boot sweep reads the FLAT temp label, whose key path already carries the prefix")
+  void bootSweepReadsFlatTempLabels() {
+    String source = paper();
+    int sweep = source.indexOf("protected void backendCleanupStaleRegistrations()");
+    assertTrue(sweep > 0, "the folder-missing sweep must exist");
+    String body = source.substring(sweep);
+    body = body.substring(0, body.indexOf("\n  }"));
+
+    // importWorld files entries under world.getName(): "<tempNamespace>_<keyPath>", where the key
+    // path itself starts with the temp prefix -- hence the doubled sexidium_temp_sexidium_temp_*
+    // names no ns/key-shaped parse could ever reach.
+    assertTrue(body.contains("naming.tempNamespace() + \"_\"") && body.contains("startsWith(naming.tempPrefix())"),
+        "the sweep must recognise the exact flat label shape; guessing at anything else risks"
+            + " dropping an operator's own registration");
+  }
 }

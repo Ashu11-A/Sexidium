@@ -1290,15 +1290,23 @@ public final class PaperWorldControl extends AbstractWorldControl {
   @Override
   protected void backendForgetRegistration(String runtimeName) {
     String keyPath = experienceKeyPathOf(runtimeName);
-    if (keyPath == null || keyPath.isBlank()) {
-      return;
-    }
     String namespace = naming.experiencesNamespace();
+    if (keyPath == null || keyPath.isBlank()) {
+      // Temp/pool worlds never carry the experience key shape; their registrations used to be left
+      // behind for ever, and every boot logged one autoload failure per deleted arena.
+      keyPath = WorldNaming.lastSegment(runtimeName);
+      if (keyPath == null || keyPath.isBlank()) {
+        return;
+      }
+      namespace = naming.tempNamespace();
+    }
     forgetRegistration(namespace, keyPath);
     // The linked dimensions travel with their overworld and are registered the same way, so they have
     // to be retired the same way -- they were never unregistered at all before.
-    for (String suffix : siblingKeySuffixes()) {
-      forgetRegistration(namespace, keyPath + suffix);
+    if (namespace.equals(naming.experiencesNamespace())) {
+      for (String suffix : siblingKeySuffixes()) {
+        forgetRegistration(namespace, keyPath + suffix);
+      }
     }
   }
 
@@ -1350,11 +1358,26 @@ public final class PaperWorldControl extends AbstractWorldControl {
     for (String registered : multiverse.registeredWorldNames()) {
       String normalized = registered.replace(':', '/');
       int slash = normalized.indexOf('/');
-      if (slash <= 0) {
-        continue;
+      String namespace;
+      String keyPath;
+      if (slash > 0) {
+        namespace = normalized.substring(0, slash);
+        keyPath = normalized.substring(slash + 1);
+      } else {
+        // Flat Bukkit label: importWorld stores world.getName(), and a temp world's label is
+        // <tempNamespace>_<keyPath> where the key path itself carries the temp prefix -- hence the
+        // doubled "sexidium_temp_sexidium_temp_*" names. Only that exact shape is ever touched;
+        // guessing at anything else could drop an operator's own registration.
+        String labelPrefix = naming.tempNamespace() + "_";
+        if (!registered.startsWith(labelPrefix)) {
+          continue;
+        }
+        keyPath = registered.substring(labelPrefix.length());
+        if (!keyPath.startsWith(naming.tempPrefix())) {
+          continue;
+        }
+        namespace = naming.tempNamespace();
       }
-      String namespace = normalized.substring(0, slash);
-      String keyPath = normalized.substring(slash + 1);
       if (!managed.contains(namespace) || Files.exists(dimensionsRoot().resolve(namespace).resolve(keyPath))) {
         continue;
       }
