@@ -1,11 +1,13 @@
 package com.sexidium.paper.adapter.menu;
 
+import com.google.common.collect.ImmutableMultimap;
 import com.sexidium.core.menu.UiItem;
 import com.sexidium.core.platform.model.ItemKey;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -41,6 +43,7 @@ public final class PaperUiItemFactory {
    * routing tag — can do so on the same meta before committing it.
    */
   public static void apply(ItemMeta meta, UiItem item, boolean packLoaded) {
+    stripVanillaTooltip(meta);
     Component name = PaperMenuArt.text(item.name(), packLoaded).decoration(TextDecoration.ITALIC, false);
     meta.displayName(name);
     List<String> loreLines = item.lore();
@@ -60,6 +63,24 @@ public final class PaperUiItemFactory {
     if (packLoaded && item.model() != null) {
       applyItemModel(meta, item.model());
     }
+  }
+
+  /**
+   * Strips every vanilla tooltip block from a UI item, so a button shows only its name and lore.
+   *
+   * <p>A menu icon is a picture, not gear: a {@code diamond_sword} button must not advertise "7 Attack
+   * Damage", an enchanted-look icon must not list its enchantments, and a potion/book/banner icon must not
+   * spill its contents. {@link ItemFlag#values()} covers every hide-flag the running server knows (so a
+   * future flag is picked up for free), and the empty attribute-modifiers component is belt-and-braces:
+   * it replaces the <i>material's own defaults</i>, which is what produces the "When in Main Hand" block
+   * on weapons and tools even when the item carries no modifiers of its own.</p>
+   *
+   * <p>The {@code minecraft:<id>} and "N component(s)" lines are the client's F3+H advanced tooltips —
+   * they are rendered locally and no server-side item data can suppress them.</p>
+   */
+  private static void stripVanillaTooltip(ItemMeta meta) {
+    meta.setAttributeModifiers(ImmutableMultimap.of());
+    meta.addItemFlags(ItemFlag.values());
   }
 
   /** Resolves an {@link ItemKey} to a Bukkit {@link Material}, falling back to PAPER for unknown ids. */
