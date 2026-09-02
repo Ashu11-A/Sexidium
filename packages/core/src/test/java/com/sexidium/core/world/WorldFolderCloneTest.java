@@ -88,8 +88,13 @@ class WorldFolderCloneTest {
     // The window a real concurrent writer occupies. For the backup that writer is the world itself:
     // an experience whose chunks are still being flushed, which is exactly what the loaded-world
     // refusal exists to keep out — and this is the second line of defence when it gets through.
+    // The rewrite changes LENGTH on purpose: the bracket sees size+mtime, and whether two
+    // same-length writes land on distinct timestamps is a property of the filesystem (nanosecond
+    // on ext4, millisecond-or-coarser under overlayfs) — production documents same-length
+    // detection as best-effort for exactly that reason. Drift must be refused everywhere, and a
+    // length change is what makes it visible everywhere.
     WorldClone.ChunkCopyResult result = WorldClone.copyWorldFolderChecked(source, target,
-        () -> write(source.resolve("sexidium/state.yml"), "deathresets.resets: \"8\""));
+        () -> write(source.resolve("sexidium/state.yml"), "deathresets.resets: \"88\""));
 
     assertFalse(result.ok(), "a folder that changed under the reader must never be reported as copied");
     assertEquals(WorldClone.CloneFailure.TEMPLATE_CHANGED, result.failure());
