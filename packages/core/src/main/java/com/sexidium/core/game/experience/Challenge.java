@@ -566,6 +566,18 @@ public abstract class Challenge {
     }
   }
 
+  protected boolean stateBoolean(String key, boolean defaultValue) {
+    ExperienceState state = state();
+    return state == null ? defaultValue : state.getBoolean(stateKey(key), defaultValue);
+  }
+
+  protected void setStateBoolean(String key, boolean value) {
+    ExperienceState state = state();
+    if (state != null) {
+      state.setBoolean(stateKey(key), value);
+    }
+  }
+
   protected boolean stateHas(String key) {
     ExperienceState state = state();
     return state != null && state.has(stateKey(key));

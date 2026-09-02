@@ -1,6 +1,7 @@
 package com.sexidium.core.game.experience.challenges;
 
 import com.sexidium.core.game.hud.HudCadence;
+import com.sexidium.core.game.GameEvents.EntityDeathGameEvent;
 import com.sexidium.core.game.GameEvents.PlayerDeathGameEvent;
 import com.sexidium.core.game.experience.Challenge;
 import com.sexidium.core.game.experience.ExperienceWorldReset;
@@ -17,7 +18,11 @@ import com.sexidium.core.platform.hud.HudSurfaceSpec;
 import com.sexidium.core.platform.PlayerAdapter;
 import com.sexidium.core.platform.TabListHandle;
 import com.sexidium.core.platform.WorldAdapter;
+import com.sexidium.core.platform.hud.HudAlign;
+import com.sexidium.core.platform.hud.HudColor;
 import com.sexidium.core.platform.model.HudAnchor;
+import com.sexidium.core.platform.model.WorldPosition;
+import com.sexidium.core.world.WorldKey;
 
 import java.util.List;
 import java.util.Set;
@@ -43,6 +48,20 @@ import java.util.Set;
  * world, so it returns to zero on every reset; the played-time figure beside it is the one that spans
  * the whole run.
  *
+ * <h2>The boss checklist</h2>
+ * Beneath the counters, the four bosses a world is asked to get through — Elder Guardian, Warden,
+ * Wither, Ender Dragon — as a to-do list that ticks off and strikes through as they fall. See
+ * {@link BossLadder} for the order and for why a kill counts whichever order it happens in, and
+ * {@link #onEntityDeath} for why the ticks are WORLD-scoped: a reset takes the list back to nothing,
+ * because the monument, the Deep Dark and the End those bosses lived in stopped existing with it.
+ *
+ * <p>The strike-through is real wherever the line goes through the chat component pipeline — the
+ * sidebar fallback, and so every Bedrock player and every server without the overlay plugin. It is
+ * NOT real in BetterHud's corner: that renderer draws through a font atlas and reads a row's colour
+ * and nothing else, so the line is flattened to plain text before it arrives. The state therefore
+ * also rides in a character the flatten cannot take away — {@code ☐} against {@code ☑}, the same
+ * width in the font, so a rung ticking off does not shift the column.</p>
+ *
  * <h2>Where the numbers are shown</h2>
  * In a top-left corner overlay when the platform can draw one — on Paper that means BetterHud, so not on
  * Bedrock and not on a server without the plugin — and on the shared HUD panel when it cannot. Exactly
@@ -62,6 +81,8 @@ public final class DeathResetsChallenge extends Challenge {
    * other statistic. Deliberately NOT carried across a regeneration: a new world begins at day zero.
    */
   private static final String KEY_DAYS = "days";
+  /** Whether the checklist is hidden. World-scoped like the rungs themselves, and for the same reason. */
+  private static final String KEY_LADDER_HIDDEN = "bosses.hidden";
   private static final String SURFACE_ID = "deathresets";
   /** Names the tab-list column. Short: the platform may have to fit it into a scoreboard object name. */
   private static final String TAB_COLUMN_ID = "deaths";
@@ -71,6 +92,24 @@ public final class DeathResetsChallenge extends Challenge {
   private static final String ROW_DURATION = "duration";
   private static final String ROW_DAYS = "days";
   private static final String ROW_RESETS = "resets";
+  /**
+   * The gap between the run counters and the boss checklist, in pixels — a little under one row.
+   *
+   * <p>The two halves answer different questions: the counters are how the run is doing, the checklist
+   * is what it is FOR. Eight rows in one unbroken column reads as eight equally important numbers, and
+   * a spacer is the cheapest way to say otherwise — it costs no row and no words in any language.</p>
+   */
+  private static final int LADDER_GAP_PIXELS = 6;
+  /**
+   * Every row is drawn at 1.0, and the difference between the two halves is carried by COLOUR alone.
+   *
+   * <p>Not for want of trying a size hierarchy. BetterHud draws through a bitmap font atlas, and a
+   * fractional scale there resamples glyphs rather than reflowing them — a 0.9 row is a blurrier row,
+   * not a smaller one, and at an 8px cap height there is nothing to give away. So the counters are
+   * WHITE (live figures, read at a glance) and the whole checklist is GRAY (the standing objective),
+   * which is a hierarchy the overlay can actually render.</p>
+   */
+  private static final double ROW_SCALE = 1.0d;
   /** Dawn — the hour vanilla starts a new world at, and what {@code /time set day} means. */
   private static final long MORNING_TICKS = 1000L;
 
@@ -102,8 +141,8 @@ public final class DeathResetsChallenge extends Challenge {
 
   /**
    * This mode draws its own readout in the top-left corner, so the scoreboard sidebar is suppressed for
-   * the whole experience. The two counters ARE the interface here — the sidebar's active-challenge list,
-   * death count and blocks-broken tally are noise beside them.
+   * the whole experience. The counters and the boss checklist ARE the interface here — the sidebar's
+   * active-challenge list, death count and blocks-broken tally are noise beside them.
    */
   @Override
   public boolean ownsHud() {
@@ -111,7 +150,7 @@ public final class DeathResetsChallenge extends Challenge {
   }
 
   /**
-   * The three counters, declared once.
+   * The three counters and the boss checklist, declared once.
    *
    * <p>There is no second, hand-written copy of this for the players the corner cannot reach. The
    * driver stack renders the same declaration in BetterHud's corner for a Java player who has it and
@@ -121,12 +160,22 @@ public final class DeathResetsChallenge extends Challenge {
    * hand-maintained edge report to keep them in step.</p>
    */
   public static HudSurfaceSpec readoutSpec() {
-    return HudSurfaceSpec.persistent(SURFACE_ID)
+    HudSurfaceSpec.Builder builder = HudSurfaceSpec.persistent(SURFACE_ID)
         .anchor(HudAnchor.TOP_LEFT)
         .text(ROW_DURATION, LocalizedText.of(MessageKey.EXPERIENCE_DEATHRESETS_DURATION))
         .text(ROW_DAYS, LocalizedText.of(MessageKey.EXPERIENCE_DEATHRESETS_DAYS))
         .text(ROW_RESETS, LocalizedText.of(MessageKey.EXPERIENCE_DEATHRESETS_RESETS))
-        .build();
+        .spacer(LADDER_GAP_PIXELS);
+    for (BossLadder boss : BossLadder.ORDER) {
+      // A bare <value> pass-through, and it has to be. A row's template is fixed when the surface is
+      // declared, but whether a rung reads as pending or defeated is a runtime fact — so the WHOLE
+      // line is pushed, and the two states are two templates the publisher picks between.
+      // WHITE as the floor because that is the resting state's colour: both row templates colour
+      // themselves throughout, so this is only ever reached by a template that stopped doing so.
+      builder.text(boss.rowKey(), LocalizedText.of(MessageKey.EXPERIENCE_DEATHRESETS_BOSS_ROW),
+          HudAlign.LEFT, ROW_SCALE, HudColor.WHITE);
+    }
+    return builder.build();
   }
 
   @Override
@@ -191,7 +240,146 @@ public final class DeathResetsChallenge extends Challenge {
         MessageArg.text("text", DurationText.compact(liveRunSeconds()))));
     readout.number(ROW_DAYS, days);
     readout.number(ROW_RESETS, resets());
+    pushLadder();
     readout.refresh();
+  }
+
+  /**
+   * Publishes the checklist: one line per rung, reading either as an unticked box or as a ticked,
+   * struck-through one.
+   *
+   * <p>There is deliberately no tally row. Four lines that already say which are ticked do not also
+   * need a number saying how many — on a corner readout that is a fifth line of reading for a fact the
+   * reader can see. The count still exists where it is worth words: the announcement when a boss
+   * falls, and {@code /sx experience boss list}.</p>
+   *
+   * <p>Read straight out of the shared state on every pass rather than mirrored into a field. That is
+   * what makes a regeneration free: the rungs are world-scoped keys, a reset does not carry them, and
+   * a publisher that read a cached copy would keep drawing four ticked boxes for a world in which
+   * nothing has been killed yet. Pushes are idempotent and the values compare equal between pushes,
+   * so re-publishing an unchanged list costs nothing downstream.</p>
+   */
+  private void pushLadder() {
+    boolean hidden = hidden();
+    for (BossLadder boss : BossLadder.ORDER) {
+      boolean defeated = defeated(boss);
+      // Blanked rather than left unpushed. The counters above keep running while the checklist is
+      // hidden, so the surface is still live — a row with no value at all would draw the unset dash,
+      // which is a readout claiming it has lost track rather than one that was switched off.
+      readout.blank(boss.rowKey(), hidden);
+      readout.text(boss.rowKey(), LocalizedText.of(
+          defeated
+              ? MessageKey.EXPERIENCE_DEATHRESETS_BOSS_DEFEATED
+              : MessageKey.EXPERIENCE_DEATHRESETS_BOSS_PENDING,
+          MessageArg.localized("boss", LocalizedText.of(boss.displayName()))));
+    }
+  }
+
+  // ----- the live controls the boss command drives ---------------------------------------------
+
+  /**
+   * Ticks a rung off by hand, or takes it back. Returns false when nothing changed, so a caller can
+   * tell "done" from "was already done".
+   *
+   * <p>Marking by hand records the same three facts a kill does, so a rung ticked from a command is
+   * indistinguishable downstream from one ticked by a Warden dying — there is no second shape of
+   * "done" for a reader to have to know about. UNticking clears all three: leaving a kill time behind
+   * a cleared flag would be a record of something the checklist says never happened.</p>
+   */
+  public boolean markBoss(BossLadder boss, boolean done) {
+    if (boss == null || defeated(boss) == done) {
+      return false;
+    }
+    recordKill(boss, done);
+    pushLadder();
+    readout.refresh();
+    return true;
+  }
+
+  /** Whether the checklist is currently hidden for this experience. */
+  public boolean hidden() {
+    return stateBoolean(KEY_LADDER_HIDDEN, false);
+  }
+
+  /**
+   * Shows or hides the checklist without touching what it holds.
+   *
+   * <p>The counters are deliberately unaffected: this hides the OBJECTIVE, which is the part a player
+   * may want out of the way once they know it by heart, not the run's own figures. Persisted, so it
+   * survives a restart — a player who turned it off does not get it back on the next boot.</p>
+   */
+  public void setHidden(boolean hidden) {
+    setStateBoolean(KEY_LADDER_HIDDEN, hidden);
+    pushLadder();
+    readout.refresh();
+  }
+
+  /** When a rung fell, as epoch millis, or 0 if it has not. */
+  public long defeatedAt(BossLadder boss) {
+    return boss == null ? 0L : stateLong(boss.stateKeyAt(), 0L);
+  }
+
+  /** The run's played seconds at the moment a rung fell, or 0 if it has not. */
+  public long defeatedAtPlayed(BossLadder boss) {
+    return boss == null ? 0L : stateLong(boss.stateKeyPlayed(), 0L);
+  }
+
+  /** Whether a rung is ticked off in the world currently being played. Public for the boss command. */
+  public boolean isDefeated(BossLadder boss) {
+    return defeated(boss);
+  }
+
+  /**
+   * Writes (or clears) the three facts about a rung: that it fell, when by the wall clock, and how far
+   * into the run's played time. Kept in one place so a hand mark and a real kill cannot drift apart.
+   */
+  private void recordKill(BossLadder boss, boolean done) {
+    setStateBoolean(boss.stateKey(), done);
+    if (done) {
+      setStateLong(boss.stateKeyAt(), System.currentTimeMillis());
+      setStateLong(boss.stateKeyPlayed(), liveRunSeconds());
+      return;
+    }
+    setStateLong(boss.stateKeyAt(), 0L);
+    setStateLong(boss.stateKeyPlayed(), 0L);
+  }
+
+  /**
+   * Something died. If it was one of the four, and it died in THIS world, tick it off.
+   *
+   * <h2>Why the ticked rungs do not survive a reset</h2>
+   * They are not carried by {@link #onPlayerDeath}'s allowlist, and that is the design rather than an
+   * omission. A world is what a boss was killed IN: the monument, the Deep Dark and the End that the
+   * four of them lived in all stop existing when somebody dies, so a list that carried over would be
+   * crediting a run for bosses that are, along with their worlds, gone. Keeping the list world-scoped
+   * is also what gives the mode its shape — reaching the Ender Dragon and then dying costs all four,
+   * which is the same bargain the world itself is already on.
+   *
+   * <h2>Scoped to this run, because the event is not</h2>
+   * {@code GameEventRouter} hands every entity death to every running match, so two Death Resets
+   * worlds on one node would otherwise tick each other's lists. The order of the guards is the hot
+   * path: a string compare rejects the zombie, and only a genuine boss kill in a run that has not
+   * already recorded it ever pays for parsing a world name.
+   */
+  @Override
+  public void onEntityDeath(EntityDeathGameEvent event) {
+    BossLadder boss = BossLadder.match(event == null ? null : event.entityType()).orElse(null);
+    if (boss == null || defeated(boss) || !inThisWorld(event.deathPosition())) {
+      return;
+    }
+    recordKill(boss, true);
+    // Straight away, not on the next cadence. A boss fight ends in a moment the player is watching for,
+    // and a box that ticks itself a second later reads as the HUD having missed it.
+    pushLadder();
+    readout.refresh();
+    int felled = defeatedCount();
+    announce(MessageKey.EXPERIENCE_DEATHRESETS_BOSS_FELLED,
+        MessageArg.localized("boss", LocalizedText.of(boss.displayName())),
+        MessageArg.text("done", felled),
+        MessageArg.text("total", BossLadder.total()));
+    if (felled >= BossLadder.total()) {
+      announce(MessageKey.EXPERIENCE_DEATHRESETS_BOSSES_COMPLETE);
+    }
   }
 
   @Override
@@ -272,6 +460,11 @@ public final class DeathResetsChallenge extends Challenge {
   public void onWorldReset(WorldAdapter world) {
     startInTheMorning(world);
     setStateLong(KEY_BASELINE, world == null ? 0L : world.fullTimeTicks());
+    // The rungs were never carried, so the state is already empty — but the SCREEN is not, and the
+    // players arriving in the new world are looking at it. Repaint now rather than leave a list of
+    // ticked boxes standing over terrain in which nothing has been killed.
+    pushLadder();
+    readout.refresh();
   }
 
   /**
@@ -302,6 +495,8 @@ public final class DeathResetsChallenge extends Challenge {
     context.debugStat("Baseline (ticks)", stateLong(KEY_BASELINE, 0L));
     context.debugStat("World clock", world() == null ? "—" : world().fullTimeTicks());
     context.debugStat("Readout", readout.active() ? "driver" : "sidebar");
+    context.debugStat("Bosses", defeatedCount() + "/" + BossLadder.total()
+        + (hidden() ? " (hidden)" : ""));
     PlayerAdapter viewer = context.player();
     if (viewer != null) {
       context.debugStat("Your time", DurationText.compact(liveRunSeconds(viewer.uniqueId())));
@@ -311,6 +506,45 @@ public final class DeathResetsChallenge extends Challenge {
 
   private int resets() {
     return stateInt(KEY_RESETS, 0);
+  }
+
+  /** Whether this rung has been ticked off in the world currently being played. */
+  private boolean defeated(BossLadder boss) {
+    return stateBoolean(boss.stateKey(), false);
+  }
+
+  private int defeatedCount() {
+    int felled = 0;
+    for (BossLadder boss : BossLadder.ORDER) {
+      if (defeated(boss)) {
+        felled++;
+      }
+    }
+    return felled;
+  }
+
+  /**
+   * Whether something that died at {@code at} died in the world this experience is playing.
+   *
+   * <p>A linked Nether or End is not a world of its own — it is opened by, and travels with, its
+   * Overworld — so the Ender Dragon dying in {@code …_r3_end} has to answer yes for the run whose
+   * Overworld is {@code …_r3}. {@link WorldKey#fromRuntime} strips those suffixes, which is exactly
+   * the question being asked. The GENERATION is kept in the comparison rather than falling back to
+   * {@code sameRun}: a kill in a previous generation still loaded somewhere belongs to a world this
+   * run has already thrown away.</p>
+   */
+  private boolean inThisWorld(WorldPosition at) {
+    WorldAdapter world = world();
+    if (world == null || at == null || at.worldName() == null || gameContext() == null) {
+      return false;
+    }
+    if (at.worldName().equals(world.name())) {
+      return true;
+    }
+    String namespace = gameContext().server().worlds().experiencesSubdirName();
+    WorldKey ours = WorldKey.fromRuntime(world.name(), namespace).orElse(null);
+    return ours != null
+        && WorldKey.fromRuntime(at.worldName(), namespace).filter(ours::equals).isPresent();
   }
 
   private long days() {

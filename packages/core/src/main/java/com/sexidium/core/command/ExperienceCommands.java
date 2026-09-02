@@ -6,11 +6,19 @@ import com.sexidium.core.game.experience.ExperienceManager;
 import com.sexidium.core.game.experience.ExperienceService;
 import com.sexidium.core.game.experience.ExperienceSetup;
 import com.sexidium.core.game.experience.ExperienceWorldType;
+import com.sexidium.core.game.experience.challenges.BossLadder;
+import com.sexidium.core.game.experience.challenges.DeathResetsChallenge;
+import com.sexidium.core.game.ActiveMatch;
+import com.sexidium.core.i18n.LocalizedText;
 import com.sexidium.core.i18n.MessageArg;
 import com.sexidium.core.i18n.MessageKey;
+import com.sexidium.core.lib.DurationText;
 import com.sexidium.core.platform.CommandSource;
 import com.sexidium.core.platform.PlayerAdapter;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -147,6 +155,7 @@ final class ExperienceCommands {
                 : "<green>Hardcore off. Deaths are survivable again.</green>")
             : "<red>You do not own that experience, or it has already been lost.</red>");
       }
+      case "boss", "bosses" -> handleBoss(source, player, args);
       case "rename" -> {
         if (args.length < 4) {
           ctx.send(source, "<red>Usage:</red> <white>/sx experience rename <id> <name></white>");
@@ -184,6 +193,127 @@ final class ExperienceCommands {
     }
   }
 
+  /**
+   * The date a kill is reported in. Fixed pattern rather than a locale-sensitive one: this is read
+   * beside a play-time figure in a chat line, and a format that changed shape per client would make
+   * two people comparing screenshots of the same run disagree about what they were looking at.
+   */
+  private static final DateTimeFormatter KILL_STAMP =
+      DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
+
+  /**
+   * {@code /sx experience boss …} — the live controls for the Death Resets checklist.
+   *
+   * <p>Scoped to the match the caller is STANDING IN, deliberately, and not to an experience id they
+   * could name from anywhere. Every one of these is a change to something drawn on the screens of the
+   * people in that world; letting an owner flip a rung in a world they are not in would be editing a
+   * readout in front of players they cannot see, and {@code ExperienceCommandRouter} exists precisely
+   * because "act on a world that lives on another node" is its own problem with its own failure modes.
+   * Standing in it also means the challenge instance is right here, so there is nothing to route.</p>
+   */
+  private void handleBoss(CommandSource source, PlayerAdapter player, String[] args) {
+    DeathResetsChallenge challenge = deathResets(player);
+    if (challenge == null) {
+      ctx.send(source, "<red>You are not in a Death Resets world.</red> <gray>The boss checklist"
+          + " belongs to that mode, so stand in a running one to control it.</gray>");
+      return;
+    }
+    String action = args.length >= 3 ? lower(args[2]) : "list";
+    switch (action) {
+      case "list" -> sendBossList(source, challenge);
+      case "hide", "show" -> {
+        boolean hide = action.equals("hide");
+        challenge.setHidden(hide);
+        ctx.send(source, hide
+            ? "<gray>Boss checklist hidden.</gray> <dark_gray>The run counters stay up;"
+              + " <white>/sx experience boss show</white> brings it back.</dark_gray>"
+            : "<green>Boss checklist shown.</green>");
+      }
+      case "done", "todo" -> {
+        if (args.length < 4) {
+          ctx.send(source, "<red>Usage:</red> <white>/sx experience boss " + action
+              + " <" + bossIds() + "></white>");
+          return;
+        }
+        BossLadder boss = BossLadder.byId(args[3]).orElse(null);
+        if (boss == null) {
+          ctx.send(source, "<red>No boss called '" + escape(args[3]) + "'.</red> <gray>One of:"
+              + " <white>" + bossIds() + "</white></gray>");
+          return;
+        }
+        boolean done = action.equals("done");
+        String name = bossName(source, boss);
+        if (!challenge.markBoss(boss, done)) {
+          ctx.send(source, "<yellow>" + name + " is already "
+              + (done ? "ticked off" : "on the list") + ".</yellow>");
+          return;
+        }
+        ctx.send(source, done
+            ? "<green>✔ " + name + " ticked off.</green> <gray>It counts for this world only —"
+              + " a death takes the whole list back to nothing.</gray>"
+            : "<gray>" + name + " put back on the list.</gray>"
+              + " <dark_gray>Its kill time was cleared with it.</dark_gray>");
+      }
+      default -> ctx.send(source, "<red>Usage:</red> <white>/sx experience boss"
+          + " <list|done|todo|hide|show></white>");
+    }
+  }
+
+  /** The checklist as chat, with what the HUD has no room to say: when, and how far into the run. */
+  private void sendBossList(CommandSource source, DeathResetsChallenge challenge) {
+    int felled = 0;
+    for (BossLadder boss : BossLadder.ORDER) {
+      if (challenge.isDefeated(boss)) {
+        felled++;
+      }
+    }
+    ctx.send(source, "<gray>Bosses <white>" + felled + "</white>/<white>" + BossLadder.total()
+        + "</white>" + (challenge.hidden() ? " <dark_gray>(checklist hidden)</dark_gray>" : "") + "</gray>");
+    for (BossLadder boss : BossLadder.ORDER) {
+      String name = bossName(source, boss);
+      if (!challenge.isDefeated(boss)) {
+        ctx.send(source, "<white>☐ " + name + "</white>");
+        continue;
+      }
+      long at = challenge.defeatedAt(boss);
+      long played = challenge.defeatedAtPlayed(boss);
+      // A rung ticked before this data existed, or by an older build, has no stamps. Say so plainly
+      // rather than print an epoch-zero date that reads as 1970.
+      String when = at > 0L
+          ? "<gray>" + KILL_STAMP.format(Instant.ofEpochMilli(at)) + "</gray>"
+              + " <dark_gray>· at " + DurationText.compact(played) + " played</dark_gray>"
+          : "<dark_gray>· no kill time recorded</dark_gray>";
+      ctx.send(source, "<green>☑</green> <gray><strikethrough>" + name + "</strikethrough></gray> " + when);
+    }
+  }
+
+  /** The Death Resets challenge of the match this player is standing in, or null. */
+  private DeathResetsChallenge deathResets(PlayerAdapter player) {
+    ActiveMatch match = ctx.core.games() == null ? null : ctx.core.games().matchOf(player);
+    if (match == null || !(match.game() instanceof ExperienceGame experience)) {
+      return null;
+    }
+    return experience.challenge(DeathResetsChallenge.class).orElse(null);
+  }
+
+  /** This boss's name in the reader's own language, as the lang file spells it. */
+  private String bossName(CommandSource source, BossLadder boss) {
+    try {
+      return ctx.core.messages().renderMini(source, LocalizedText.of(boss.displayName()));
+    } catch (RuntimeException ignored) {
+      // A missing catalog costs the pretty name, not the command.
+      return boss.id().replace('_', ' ');
+    }
+  }
+
+  private static String bossIds() {
+    List<String> ids = new ArrayList<>();
+    for (BossLadder boss : BossLadder.ORDER) {
+      ids.add(boss.id());
+    }
+    return String.join("|", ids);
+  }
+
   List<String> suggest(CommandSource source, String[] args) {
     if (args.length == 2) {
       return ctx.filter(List.of("menu", "edit", "list", "join", "requests", "accept", "deny", "public", "private", "hardcore", "rename", "delete"), args[1]);
@@ -192,6 +322,7 @@ final class ExperienceCommands {
       return switch (lower(args[1])) {
         case "join" -> ctx.filter(joinableExperienceIds(source), args[2]);
         case "edit", "public", "private", "hardcore", "rename", "delete" -> ctx.filter(ownExperienceIds(source), args[2]);
+        case "boss", "bosses" -> ctx.filter(List.of("list", "done", "todo", "hide", "show"), args[2]);
         case "accept", "deny" -> ctx.filter(ctx.playerNames(), args[2]);
         default -> List.of();
       };
