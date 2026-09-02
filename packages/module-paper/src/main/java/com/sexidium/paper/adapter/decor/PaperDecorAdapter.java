@@ -3,6 +3,7 @@ package com.sexidium.paper.adapter.decor;
 import com.sexidium.core.decor.DecorTypes.DecorAnimation;
 import com.sexidium.core.decor.DecorProp;
 import com.sexidium.core.platform.DecorAdapter;
+import com.sexidium.paper.adapter.menu.PaperUiItemFactory;
 import com.sexidium.paper.adapter.player.PaperGeyser;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -218,7 +219,7 @@ public final class PaperDecorAdapter implements DecorAdapter, Listener {
     if (modelId != null && !modelId.isBlank()) {
       ItemMeta meta = stack.getItemMeta();
       if (meta != null) {
-        applyItemModel(meta, modelId);
+        PaperUiItemFactory.applyItemModel(meta, modelId);
         stack.setItemMeta(meta);
       }
     }
@@ -238,18 +239,6 @@ public final class PaperDecorAdapter implements DecorAdapter, Listener {
       return Bukkit.createBlockData(id == null || id.isBlank() ? "minecraft:smooth_quartz" : id);
     } catch (IllegalArgumentException exception) {
       return Bukkit.createBlockData(Material.SMOOTH_QUARTZ);
-    }
-  }
-
-  /** Applies a custom {@code item_model} key, degrading to the vanilla material on older servers. */
-  private void applyItemModel(ItemMeta meta, String model) {
-    try {
-      NamespacedKey key = NamespacedKey.fromString(model);
-      if (key != null) {
-        meta.setItemModel(key);
-      }
-    } catch (Throwable ignored) {
-      // Older server without the item-model component: keep the vanilla material icon.
     }
   }
 
