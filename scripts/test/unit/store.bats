@@ -31,6 +31,12 @@ setup() {
     SX_SHARED_PLUGINS="$SX_SHARED_INSTALL/plugins"
     SHARED_DIR="$TMP/shared"
     mkdir -p "$SX_SHARED_PLUGINS" "$NETWORK_DIR"
+    # HERMÉTICO de propósito: o default de SX_PAPER_JAR_NAME deriva de
+    # minecraft-targets.properties DO REPO, e o contador lá sobe a cada atualização.
+    # Estes testes falam com jars fake de nome fixo -- que o nome do artefato mudasse
+    # não pode reprovar lógica de store que não olha o nome. O teste do DEFAULT em si
+    # está no bloco "canonical jar name" abaixo.
+    SX_PAPER_JAR_NAME="Sexidium-Paper-1.0.0.jar"
     store::defaults
     SX_BUILD_STORE="$TMP/shared/install/builds"
 }
@@ -161,6 +167,59 @@ node_dir() {
     # The Sexidium jar is PINNED, per node. Linking the shared tree's copy would put
     # every node back on one build and silently defeat the whole layout.
     [ ! -e "$dir/pluginjars/Sexidium-Paper-1.0.0.jar" ]
+}
+
+@test "pluginjars skips BOTH naming eras of the Sexidium jar" {
+    # Uma árvore compartilhada migrada pode carregar um resquício do nome velho ao lado
+    # do canônico de hoje. O filtro que só conhecesse UM linkaria o outro como plugin de
+    # terceiro -- e o Paper recusaria os dois por nome duplicado de plugin.
+    fake_jar "$SX_SHARED_PLUGINS/Multiverse-Core.jar" mv
+    fake_jar "$SX_SHARED_PLUGINS/Sexidium-Paper-1.0.0.jar" era-velha
+    fake_jar "$SX_SHARED_PLUGINS/sexidium-paper-26.1.2+16.jar" era-nova
+    dir="$(node_dir worker-1)"
+    store::link_node_plugin_jars "$dir"
+    [ -L "$dir/pluginjars/Multiverse-Core.jar" ]
+    [ ! -e "$dir/pluginjars/Sexidium-Paper-1.0.0.jar" ]
+    [ ! -e "$dir/pluginjars/sexidium-paper-26.1.2+16.jar" ]
+}
+
+# --- canonical jar name ---------------------------------------------------------
+
+@test "the default paper jar name is derived, not a constant" {
+    # Sem override, store::defaults deriva o nome de minecraft-targets.properties do
+    # repo. O contador sobe a cada atualização, então o teste afirma a FORMA
+    # (sexidium-paper-<versão>+<contador>.jar) e não um número que vira poeira.
+    unset SX_PAPER_JAR_NAME
+    store::defaults
+    [[ "$SX_PAPER_JAR_NAME" =~ ^sexidium-paper-[0-9.]+\+[0-9]+\.jar$ ]]
+}
+
+# --- pinning across a canonical-name change -------------------------------------
+
+@test "a pin falls back to the staged name when the store predates a rename" {
+    # O cenário: o piso mudou (o canônico hoje é sexidium-paper-26.2+16.jar), e o
+    # rollback precisa pinar um build estacionado ANTES, sob Sexidium-Paper-1.0.0.jar.
+    # Os bytes têm de ser achados pelo manifesto; a ENTRADA em pluginjars/ continua no
+    # nome de hoje, porque é por ele que o nó procura a sua cópia.
+    fake_jar "$TMP/a/Sexidium-Paper-1.0.0.jar" "one"
+    id="$(store::stage "$TMP/a/Sexidium-Paper-1.0.0.jar")"
+
+    SX_PAPER_JAR_NAME="sexidium-paper-26.2+16.jar"
+    dir="$(node_dir worker-1)"
+    store::pin_node "$dir" "$id"
+    [ -L "$dir/pluginjars/sexidium-paper-26.2+16.jar" ]
+    [ "$(readlink "$dir/pluginjars/sexidium-paper-26.2+16.jar")" = "$SX_BUILD_STORE/$id/Sexidium-Paper-1.0.0.jar" ]
+    [ "$(store::pin_get "$dir" build)" = "$id" ]
+
+    # E o sha256 do pin é o do MANIFESTO do build antigo, não o de hoje.
+    want="$(sed -n 's/^sha256=//p' "$SX_BUILD_STORE/$id/manifest.txt" | head -1)"
+    [ "$(store::pin_get "$dir" sha256)" = "$want" ]
+}
+
+@test "staging records the jar name in the manifest" {
+    fake_jar "$TMP/a/sexidium-paper-26.1.2+16.jar" "one"
+    id="$(store::stage "$TMP/a/sexidium-paper-26.1.2+16.jar")"
+    [ "$(sed -n 's/^paper-jar-name=//p' "$SX_BUILD_STORE/$id/manifest.txt" | head -1)" = "sexidium-paper-26.1.2+16.jar" ]
 }
 
 @test "a jar dropped from the shared install disappears from the node" {

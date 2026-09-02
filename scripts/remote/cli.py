@@ -138,6 +138,13 @@ def build_parser():
         help="abort (padrão) devolve o nó e não repina nada; force custa até 30s de estado por jogador",
     )
     deploy.add_argument("--soak", type=int, default=120, help="quanto observar antes de seguir")
+    deploy.add_argument(
+        "--converge-timeout",
+        type=int,
+        default=180,
+        help="quanto esperar o nó novo publicar a própria evidência (versão+heartbeat+/health) "
+        "antes de medir a bateria",
+    )
     deploy.add_argument("--skip-tests", action="store_true", help="emergência: pula as suítes")
     deploy.add_argument(
         "--allow-unhealthy",

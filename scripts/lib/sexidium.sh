@@ -483,6 +483,53 @@ with zipfile.ZipFile(sys.argv[1], "w") as jar:
 PY_STUB
 }
 
+# sexidium::paper_jar_name  ->  sexidium-paper-26.1.2+15.jar
+#
+# O NOME CANÔNICO do artefato do Paper, derivado de minecraft-targets.properties na
+# raiz -- a MESMA fonte que o build Gradle lê (buildSrc/src/main/kotlin/MinecraftTargets.kt).
+# Shell e Gradle não podem discordar porque os dois leem o mesmo arquivo: subir o contador
+# lá muda o nome aqui sem editar mais nada. Era isso que a constante "Sexidium-Paper-1.0.0.jar"
+# repetida à mão em paper.sh, store.sh e docker/node-entry.sh garantia NÃO acontecer.
+#
+# O PISO é a primeira entrada de `sexidium.minecraft.supported`: a versão contra a qual se
+# compila e cujo nome o jar leva. O build emite aliases das outras versões ao lado dele com
+# os MESMOS bytes; quem provisiona rede instala e pina só o piso -- um nome no store, uma
+# entrada por pluginjars/. Ver minecraft-targets.properties para por que UMA compilação
+# serve várias versões.
+#
+# MORRER em vez de chutar um default: este nome decide onde o provisionador procura o jar,
+# o que o store estaciona e o que cada nó pina. Um fallback antigo aqui não falharia aqui --
+# falharia três chamadas adiante ("Build succeeded but jar not found"), com a mensagem
+# apontando para longe da causa. A falha acontece ONDE a causa está.
+#
+# Valida SÓ o piso. O contador de cada ALIAS é exigido por parseMinecraftTargets
+# (buildSrc/src/main/kotlin/MinecraftTargets.kt), e qualquer ./gradlew falha neles antes de
+# existir jar para este shell procurar -- checar os dois lados seria a mesma mensagem escrita
+# duas vezes, em duas linguagens, para desacordarem uma da outra na primeira edição.
+sexidium::paper_jar_name() {
+    local props="$ROOT_DIR/minecraft-targets.properties"
+    [[ -f "$props" ]] ||
+        die "sem $props: ele define o nome canônico do artefato do Paper"
+    # awk com IGUALDADE de string no campo 1, não sed com regex: a chave tem pontos, que
+    # em regex casam qualquer caractere, e este arquivo é editado à mão a cada atualização --
+    # é exatamente o lugar onde alguém vai acrescentar um `#` na linha errada ou um espaço
+    # a mais. Linha comentada tem $1 começando com '#', que nunca é igual à chave. O sed
+    # antes do awk é o trim de ponta da linha -- o mesmo que o parser Gradle
+    # (MinecraftTargets.kt) faz -- senão uma indentação acidental esconderia a chave.
+    local supported floor key counter
+    supported="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$props" |
+        awk -F= '$1 == "sexidium.minecraft.supported" { print $2; exit }' | tr -d '[:space:]')"
+    floor="${supported%%,*}"
+    [[ "$floor" =~ ^[0-9]+(\.[0-9]+)*$ ]] ||
+        die "minecraft-targets.properties: 'sexidium.minecraft.supported=$supported' não começa com uma versão (ex.: 26.1.2); a PRIMEIRA da lista é o piso"
+    key="sexidium.minecraft.${floor}.build"
+    counter="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$props" |
+        awk -F= -v key="$key" '$1 == key { print $2; exit }' | tr -d '[:space:]')"
+    [[ "$counter" =~ ^[1-9][0-9]*$ ]] ||
+        die "minecraft-targets.properties: '$key' ausente ou inválido ($counter); toda versão em 'supported' precisa do SEU contador, inteiro >= 1"
+    printf '%s' "sexidium-paper-${floor}+${counter}.jar"
+}
+
 build_and_copy_plugin() {
     # docker/provision.sh builds once up front and sets this, so N parallel instances do not each
     # enter Gradle (and contend on one --project-cache-dir) just to be told nothing changed.

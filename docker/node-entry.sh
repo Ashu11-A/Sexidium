@@ -91,7 +91,34 @@ SX_SHARED_MAPS="${SX_SHARED_MAPS:-$NETWORK_DIR/shared/maps}"
 # O jar do Sexidium recém-construído, na origem. O `init` tira daqui o sha256 do
 # carimbo e os nós tiram daqui só o NOME do arquivo, para achar sua cópia instalada
 # na árvore compartilhada. Uma variável, um default, os dois lados concordando.
-SEXIDIUM_JAR_PATH="${SEXIDIUM_JAR:-$ROOT_DIR/build/libs/paper/Sexidium-Paper-1.0.0.jar}"
+#
+# O default NÃO é mais uma constante: o artefato se chama
+# sexidium-paper-<mc>+<contador>.jar e o nome sai de minecraft-targets.properties --
+# a MESMA fonte que o build Gradle lê e que scripts/lib/sexidium.sh deriva via
+# sexidium::paper_jar_name. Este entrypoint não carrega as libs (mesmo precedente
+# do espelho de velocity.sh adiante), então o awk abaixo É o espelho daquele helper:
+# piso = primeira entrada de `supported`, contador = a chave DELE. Mudou lá, muda aqui.
+SEXIDIUM_JAR_DEFAULT="$(awk -F= '
+    $1 == "sexidium.minecraft.supported"    { supported = $2 }
+    /^sexidium\.minecraft\.[0-9.]+\.build=/ { counter[$1]   = $2 }
+    END {
+        split(supported, v, ",")
+        floor = v[1]; gsub(/[[:space:]]/, "", floor)
+        c = counter["sexidium.minecraft." floor ".build"]; gsub(/[[:space:]]/, "", c)
+        if (floor == "" || c == "") exit 1
+        printf "sexidium-paper-%s+%s.jar", floor, c
+    }' "$ROOT_DIR/minecraft-targets.properties" 2>/dev/null)" || SEXIDIUM_JAR_DEFAULT=""
+if [[ -n "${SEXIDIUM_JAR:-}" ]]; then
+    SEXIDIUM_JAR_PATH="$SEXIDIUM_JAR"
+else
+    # Sem fonte e sem override não há nome para adivinhar: falhar AQUI, com a causa,
+    # e não depois como "jar not found" num caminho terminando em barra.
+    if [[ -z "$SEXIDIUM_JAR_DEFAULT" ]]; then
+        printf '[node-entry:%s] FATAL: sem %s/minecraft-targets.properties e sem SEXIDIUM_JAR; de onde sairia o nome do artefato?\n' "$SX_NODE" "$ROOT_DIR" >&2
+        exit 1
+    fi
+    SEXIDIUM_JAR_PATH="$ROOT_DIR/build/libs/paper/$SEXIDIUM_JAR_DEFAULT"
+fi
 
 # Onde vive o carimbo. TEM de ser um caminho que os seis containers enxergam, e
 # NETWORK_DIR não é mais um deles: /srv/nodes é só um ponto de montagem e cada nó

@@ -154,13 +154,16 @@ Nothing is vendored: platform APIs are `compileOnly`, JDBC drivers load at runti
 That compiles every module, runs the JUnit suites, and collects deployable jars:
 
 ```
-build/libs/paper/Sexidium-Paper-1.0.0.jar        # drop into plugins/, restart
+build/libs/paper/sexidium-paper-<mc>+<n>.jar     # drop into plugins/, restart
 build/libs/velocity/Sexidium-Velocity-1.0.0.jar  # proxy only
 build/libs/internal/                             # core artifacts — do NOT deploy these
 ```
 
-Both jars bundle the bot's TypeScript source and manifests but never the Bun binary or `node_modules`,
-which keeps the Paper jar around **0.6 MB**. A default `config.yml` is generated on first run.
+The Paper jar's name carries the Minecraft version and that version's update counter (e.g.
+`sexidium-paper-26.1.2+16.jar`), derived from `minecraft-targets.properties`; one jar per supported
+version is emitted, all byte-identical. Both jars bundle the bot's TypeScript source and manifests
+but never the Bun binary or `node_modules`, which keeps the Paper jar around **0.6 MB**. A default
+`config.yml` is generated on first run.
 
 In-game, `/sx modes` lists everything and `/sx start minigames race` starts one; every command sits under `/sexidium` (alias `/sx`), needs `sexidium.admin`, and only one game runs at a time.
 

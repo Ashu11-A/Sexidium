@@ -1,6 +1,12 @@
 plugins {
   `java-library`
   jacoco
+  // Test-only source set, consumed by the adapter modules as testFixtures(project(":packages:core")).
+  // It carries AbstractCoreApiSurfaceTest, the shared base of the golden API-surface check that both
+  // adapters extend — one implementation of a check that used to be copy-pasted into two modules and
+  // had already started drifting. It is a SEPARATE source set on purpose: nothing here ships, and
+  // module-paper's bundledCore configuration resolves core's runtime jar, which does not include it.
+  `java-test-fixtures`
 }
 
 dependencies {
@@ -8,6 +14,8 @@ dependencies {
   testImplementation("org.xerial:sqlite-jdbc:3.53.1.0")
   testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  // api, not implementation: the base class exposes JUnit's @Test to whoever extends it.
+  testFixturesApi("org.junit.jupiter:junit-jupiter:5.11.4")
 }
 
 java {

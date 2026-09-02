@@ -30,6 +30,12 @@
 if [[ -n "${_SX_LIB_STORE:-}" ]]; then return 0; fi
 _SX_LIB_STORE=1
 
+# O nome canônico do jar do Paper vem de sexidium::paper_jar_name -- exigir a lib aqui,
+# e não confiar na ordem dos sx::require dos entrypoints. plugins.sh já faz o mesmo com
+# yaml; um store carregado sem sexidium morreria dentro do default abaixo com "function
+# not found", que não se parece com a causa.
+sx::require sexidium
+
 # shellcheck disable=SC2034  # cross-library globals, same rationale as paper::defaults
 store::defaults() {
     # Beside the shared install, on the same volume every container mounts -- a node
@@ -54,7 +60,10 @@ store::defaults() {
     # there, and that separation is what makes an interrupted run harmless.
     SX_ADOPT_BUILD="${SX_ADOPT_BUILD:-1}"
 
-    SX_PAPER_JAR_NAME="${SX_PAPER_JAR_NAME:-Sexidium-Paper-1.0.0.jar}"
+    # Derivado da mesma fonte do build (minecraft-targets.properties, via
+    # sexidium::paper_jar_name). O store NÃO é quem decide o nome -- é quem o segue:
+    # pin_node procura dentro de builds/<id>/ exatamente este nome.
+    SX_PAPER_JAR_NAME="${SX_PAPER_JAR_NAME:-$(sexidium::paper_jar_name)}"
     SX_VELOCITY_JAR_NAME="${SX_VELOCITY_JAR_NAME:-Sexidium-Velocity-1.0.0.jar}"
 }
 
@@ -154,6 +163,12 @@ store::stage() {
     {
         printf 'build=%s\n' "$id"
         printf 'sha256=%s\n' "$sha"
+        # O nome COM QUE este jar foi estacionado. O canônico hoje é sexidium-paper-<mc>+<n>.jar,
+        # mas o nome mudou uma vez e pode mudar de novo (toda troca de piso o muda) -- e um build
+        # antigo no store continua sob o nome DA ÉPOCA. É esta linha que deixa o pin_node achar
+        # os bytes de um rollback sem adivinhar; builds anteriores a ela não a têm, e lá vale o
+        # fallback da constante velha.
+        printf 'paper-jar-name=%s\n' "$(basename "$paper")"
         if [[ -n "$velocity" && -s "$velocity" ]]; then
             printf 'velocity-sha256=%s\n' "$(store::sha256 "$velocity")"
         fi
@@ -239,16 +254,23 @@ store::link_node_plugin_jars() {
     for jar in "$SX_SHARED_PLUGINS"/*.jar; do
         [[ -f "$jar" ]] || continue
         name="$(basename "$jar")"
-        # The Sexidium jar is never linked from here: it is PINNED, per node, and
-        # the shared tree is no longer where it lives.
-        [[ "$name" != "$SX_PAPER_JAR_NAME" ]] || continue
+        # O Sexidium jar nunca é linkado daqui: é PINADO, por nó, e o store é onde ele
+        # vive. Dois padrões porque o nome canônico mudou de era ("Sexidium-Paper-1.0.0.jar"
+        # -> "sexidium-paper-<mc>+<n>.jar") e uma árvore compartilhada migrada pode ter um
+        # resquício do nome velho -- que, sem este filtro, seria linkado como se fosse
+        # plugin de terceiro e carregado DUAS vezes.
+        case "$name" in
+            "$SX_PAPER_JAR_NAME" | Sexidium-Paper-*.jar | sexidium-paper-*+*.jar) continue ;;
+        esac
         store::place "$jar" "$jars/$name"
     done
 
     for jar in "$jars"/*.jar; do
         [[ -e "$jar" || -L "$jar" ]] || continue
         name="$(basename "$jar")"
-        [[ "$name" != "$SX_PAPER_JAR_NAME" ]] || continue
+        case "$name" in
+            "$SX_PAPER_JAR_NAME" | Sexidium-Paper-*.jar | sexidium-paper-*+*.jar) continue ;;
+        esac
         # Two removals, one rule: an entry whose shared original is gone (a dropped
         # plugin), and a dangling link (a shared tree rebuilt underneath us). Both
         # mean "this node would load something nobody intends".
@@ -268,10 +290,30 @@ store::link_node_plugin_jars() {
 # with it.
 store::pin_node() {
     local dir="$1" id="$2" record="${3:-}"
-    local build_dir jar previous now
+    local build_dir jar previous now name
 
     build_dir="$(store::path "$id")"
-    jar="$build_dir/$SX_PAPER_JAR_NAME"
+    # A ENTRADA em pluginjars/ leva sempre o nome canônico de HOJE: é por este nome que o
+    # nó procura a sua cópia (docker/node-entry.sh deriva o mesmo nome da mesma fonte), e
+    # um nome que muda de nó para nó transformaria "qual jar este nó carrega?" em pergunta
+    # sem resposta estável.
+    #
+    # Os BYTES podem ter estacionado sob outro nome: um rollback que atravessa uma troca
+    # de piso pina um build antigo, guardado no store com o nome DA ÉPOCA. O manifesto do
+    # build é o registro desse nome (paper-jar-name=); sem a linha, é porque o build
+    # precede a mudança e só pode ter o nome velho. Em ambos os casos o sha256 verificado
+    # logo abaixo continua sendo o do MANIFESTO -- o nome é endereço, não identidade.
+    name="$SX_PAPER_JAR_NAME"
+    jar="$build_dir/$name"
+    if [[ ! -s "$jar" ]]; then
+        local era_name
+        era_name="$(store::manifest_get "$id" paper-jar-name)"
+        era_name="${era_name:-Sexidium-Paper-1.0.0.jar}"
+        if [[ -s "$build_dir/$era_name" ]]; then
+            log "Build $id está no store como $era_name (canônico hoje: $SX_PAPER_JAR_NAME); pinando o conteúdo dele"
+            jar="$build_dir/$era_name"
+        fi
+    fi
     [[ -s "$jar" ]] || die "store::pin_node: build $id has no $SX_PAPER_JAR_NAME"
     local want have
     want="$(store::manifest_get "$id" sha256)"
@@ -280,7 +322,23 @@ store::pin_node() {
         die "store::pin_node: $jar ($have) does not match manifest $id ($want); refusing to pin"
 
     mkdir -p "$dir/pluginjars"
-    store::place "$jar" "$dir/pluginjars/$SX_PAPER_JAR_NAME"
+    store::place "$jar" "$dir/pluginjars/$name"
+    # E PURGA as entradas de ERAS ANTERIORES do próprio Sexidium. O pin anterior pode ter
+    # deixado um link com o nome DA ÉPOCA dele (ex.: Sexidium-Paper-1.0.0.jar de antes da
+    # renomeação); sem esta remoção o diretório fica com DOIS jars declarando o mesmo nome
+    # de plugin, e o Paper reprova o boot inteiro com "Ambiguous plugin name" -- ou pior,
+    # resolve um dos dois em silêncio. O filtro é o mesmo de store::link_node_plugin_jars:
+    # canônico de hoje + os dois padrões históricos, menos a entrada que ACABOU de ser
+    # colocada. Terceiros não são tocados.
+    local stale
+    for stale in "$dir/pluginjars"/Sexidium-Paper-*.jar "$dir/pluginjars"/sexidium-paper-*.jar; do
+        # Glob sem match fica literal e não existe -> o segundo teste o descarta.
+        # A entrada recém-colocada ($name) nunca é ela mesma removida.
+        if [[ "${stale##*/}" != "$name" ]] && [[ -e "$stale" || -L "$stale" ]]; then
+            rm -f "$stale"
+            log "Removido jar Sexidium de outra era: ${stale##*/} (canônico: $name)"
+        fi
+    done
 
     previous=""
     if [[ "$record" == "--record-previous" ]]; then

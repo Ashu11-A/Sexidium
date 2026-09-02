@@ -8,9 +8,9 @@ bin/
 *.class
 META-INF/
 
-# Test servers (runtime-generated, not source)
-/test/paper/
-/test/neoforge/
+# Test servers (runtime-generated, not source). Covers the per-version dirs the
+# cross-version matrix creates, e.g. SERVER_DIR=test/paper-26.2 scripts/init-paper.sh
+/test/*
 
 # IDE
 .idea/

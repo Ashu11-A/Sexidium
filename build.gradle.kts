@@ -379,6 +379,11 @@ val collectJars by tasks.registering(Sync::class) {
     // without the JDBC drivers Velocity has no way to load).
     dependsOn(coreProject.tasks.named("jar"))
     dependsOn(paperAdapterProject.tasks.named("jar"))
+    // E dos ALIASES: o Sync abaixo copia o DIRETÓRIO libs/ do módulo Paper, e é o
+    // paperVersionAliases que escreve os nomes por versão nele. Sem esta linha o Gradle
+    // recusa o build ("uses this output ... without declaring an implicit dependency") --
+    // e razão não lhe falta: sem ela, um assemble poderia sincronizar metade dos jars.
+    dependsOn(paperAdapterProject.tasks.named("paperVersionAliases"))
     dependsOn(velocityAdapterProject.tasks.named("shadowJar"))
     into(layout.buildDirectory.dir("libs"))
 
@@ -396,9 +401,15 @@ val collectJars by tasks.registering(Sync::class) {
 
     // Internal package jars are build artifacts, but they are not Paper plugins.
     // Keeping them out of build/libs/*.jar prevents accidental deployment.
-    from(coreProject.layout.buildDirectory.dir("libs")) {
+    //
+    // The core JAR TASK, not core's libs DIRECTORY. The directory form copied whatever happened to be
+    // in there, which stopped being exactly one file when core gained a testFixtures source set: the
+    // test-fixtures jar (test-only support code, shipped nowhere) would have been synced into
+    // internal/ alongside the real one, and Gradle rejected the build outright because the directory
+    // is another task's output that nothing here depended on. Naming the task copies exactly the one
+    // artifact and carries its own task dependency.
+    from(coreProject.tasks.named("jar")) {
         into("internal")
-        include("*.jar")
     }
 }
 

@@ -223,7 +223,12 @@ class Status:
                 # plugin A MAIS era reportado como "nó sem plugin" -- reprovando build.pins
                 # e, por ele, o preflight de todo rolling update. `ls` aceita N e só falha
                 # quando não casa nada, que é a pergunta real.
-                f"ls {self.topology.network_dir}/{node}/pluginjars/Sexidium-Paper-*.jar "
+                #
+                # A classe [Ss]exidium-[Pp]aper cobre as DUAS eras de nome -- a velha
+                # ("Sexidium-Paper-1.0.0.jar") e a canônica de hoje
+                # ("sexidium-paper-<mc>+<n>.jar"): um nó pina o build que o store guarda,
+                # e um store que atravessou troca de piso tem entradas das duas eras.
+                f"ls {self.topology.network_dir}/{node}/pluginjars/[Ss]exidium-[Pp]aper-*.jar "
                 ">/dev/null 2>&1 || echo BROKEN",
             )
             text = out if code == 0 else ""

@@ -400,6 +400,23 @@ class Pipeline:
     def latest_build(self):
         return self.helper.read(f"{self.state_dir}/builds/LATEST").strip() or None
 
+    def staged_jar_name(self, build_id):
+        """O NOME do artefato daquele build, lido do MANIFESTO dele.
+
+        O nome deixou de ser constante quando o artefato virou
+        sexidium-paper-<mc>+<contador>.jar com contador POR versão: toda troca de piso
+        muda o nome canônico, e um store que atravessou uma delas guarda builds sob
+        NOMES diferentes. O manifesto (paper-jar-name=, escrito pelo store::stage) é o
+        registro do nome real daquele build -- derivá-lo do fonte atual mentiria sobre
+        builds antigos e apontaria o SEXIDIUM_JAR do install para caminho que não existe.
+        """
+        manifest = self.helper.read(f"{self.state_dir}/builds/{build_id}/manifest.txt") or ""
+        for line in manifest.splitlines():
+            if line.startswith("paper-jar-name="):
+                return line.split("=", 1)[1].strip()
+        # Builds anteriores à linha no manifesto só podem ter o nome da era velha.
+        return "Sexidium-Paper-1.0.0.jar"
+
     def install(self, build_id):
         """Provisiona a rede inteira com o artefato já pronto, SEM mover pin nenhum.
 
@@ -416,7 +433,7 @@ class Pipeline:
             mode="full",
             env={
                 "SX_SKIP_BUILD": "1",
-                "SEXIDIUM_JAR": f"{self.state_dir}/builds/{build_id}/Sexidium-Paper-1.0.0.jar",
+                "SEXIDIUM_JAR": f"{self.state_dir}/builds/{build_id}/{self.staged_jar_name(build_id)}",
                 "SX_ADOPT_BUILD": "0",
             },
         )
@@ -733,6 +750,27 @@ class Pipeline:
                 break
             if self.client.dry_run:
                 ready = True
+                break
+            time.sleep(5)
+
+        # A espera acima dispara na PRIMEIRA linha de meio-de-enable ("Network node '"),
+        # e a bateria abaixo lê o BANCO — onde o processo morto há segundos deixou a sua
+        # última linha: plugin_version do build VELHO, heartbeat morrendo, API já sem
+        # dono. Foi exatamente assim que um canário saudável levou rollback: as cinco
+        # falhas da bateria eram idade, não defeito. Espera aqui até o nó NOVO publicar
+        # a própria evidência — versão com o build pinado, heartbeat fresco e /health
+        # respondendo — ou até o prazo; quem nunca convergiu é um boot ruim de verdade,
+        # e a bateria o reprova como sempre.
+        port = self.api_port_of(node)
+        converge_deadline = time.time() + (getattr(self.args, "converge_timeout", None) or 180)
+        converged = False
+        while not self.client.dry_run and time.time() < converge_deadline:
+            row = self.registry.node(node) or {}
+            reported = row.get("plugin_version") or ""
+            age = self._age(row)
+            status, _ = node_http(self.helper, node, port, "GET", "/health", self.token)
+            if build_id in reported and (age is None or age < 30) and status == 200:
+                converged = True
                 break
             time.sleep(5)
 

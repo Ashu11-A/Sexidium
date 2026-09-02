@@ -36,6 +36,8 @@ dependencies {
   implementation("org.postgresql:postgresql:42.7.4")
 
   testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+  // AbstractCoreApiSurfaceTest, shared with :packages:module-paper.
+  testImplementation(testFixtures(project(":packages:core")))
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
   testCompileOnly("com.velocitypowered:velocity-api:3.5.1")
 }
@@ -46,6 +48,7 @@ java {
 
 tasks.test {
   useJUnitPlatform()
+  configureSourceScanningTests(project)
 }
 
 // RELOCATION IS MANDATORY, not hygiene. Velocity's PluginClassLoader falls back to sibling
