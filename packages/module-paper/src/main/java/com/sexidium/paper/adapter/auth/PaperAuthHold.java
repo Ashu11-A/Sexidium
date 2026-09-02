@@ -35,9 +35,9 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -68,7 +68,7 @@ public final class PaperAuthHold implements Listener {
   private final AuthHoldPolicy policy;
   private final AuthHoldService holds;
 
-  private BukkitTask task;
+  private ScheduledTask task;
 
   public PaperAuthHold(JavaPlugin plugin, SexidiumCore core, ConfigurationAdapter configuration) {
     this.plugin = plugin;
@@ -80,7 +80,17 @@ public final class PaperAuthHold implements Listener {
   /** Start the countdown renderer and install the release hook core will call on a decision. */
   public void start() {
     core.setHoldRelease(this::releaseByIdentity);
-    this.task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, TICK_PERIOD, TICK_PERIOD);
+    // GlobalRegionScheduler, not getScheduler(): plugin.yml declares folia-supported, which is only
+    // true while every timer rides a region/entity/async scheduler — the legacy one throws
+    // UnsupportedOperationException on Folia and would kill the countdown at startup.
+    //
+    // The timer itself belongs on the global region: it reads database rows and iterates the hold
+    // table, which is owned by nobody in particular. What it must NOT do from there is touch a
+    // PLAYER — setGameMode, kick, showPlayer and friends belong to the region that owns that entity,
+    // and Folia throws when another thread reaches in. So every player-facing step below is handed to
+    // that player's own entity scheduler via onPlayerThread(); see release() and tick().
+    this.task = plugin.getServer().getGlobalRegionScheduler()
+        .runAtFixedRate(plugin, ignored -> tick(), TICK_PERIOD, TICK_PERIOD);
   }
 
   public void stop() {
@@ -178,33 +188,55 @@ public final class PaperAuthHold implements Listener {
     if (player == null || !player.isOnline()) {
       return;
     }
-    if (!approved) {
-      player.kick(MINI_MESSAGE.deserialize(
-          AuthMessages.bilingual(core.messages(), MessageKey.AUTH_SESSION_DENIED,
-              MessageArg.text("hours", 24))));
-      return;
-    }
-    held.ifPresent(hold -> {
-      if (policy.spectator()) {
-        player.setGameMode(gameModeOf(hold.previousGameMode()));
-      }
-    });
-    player.setInvulnerable(false);
-    if (policy.hideFromOthers()) {
-      for (Player other : plugin.getServer().getOnlinePlayers()) {
-        if (!other.equals(player)) {
-          other.showPlayer(plugin, player);
-          player.showPlayer(plugin, other);
-        }
-      }
-    }
-    player.clearTitle();
-    player.sendActionBar(Component.empty());
-    player.sendMessage(MINI_MESSAGE.deserialize(inline(MessageKey.AUTH_HOLD_APPROVED,
-        MessageArg.text("hours", sessions == null ? 18 : sessions.sessionHours()))));
-    if (sessions != null) {
+    if (approved && sessions != null) {
+      // Stays on the calling thread rather than moving into the entity-scheduler task below: it is a
+      // database write, and a region thread is the last place to put one. Unchanged in every other
+      // respect — still only on an approval, still only for a player who is actually here.
       held.ifPresent(hold -> sessions.consumeRequest(hold.requestId()));
     }
+    // Everything from here mutates the player, so it runs on the region that owns them — never on
+    // whichever thread happened to decide the release (the global-region timer below, the network bus,
+    // or a command). The bookkeeping above already ran: a player who logs off in between simply loses
+    // the cosmetics, which is the same outcome as the isOnline() check.
+    long sessionHours = sessions == null ? 18 : sessions.sessionHours();
+    onPlayerThread(player, () -> {
+      if (!approved) {
+        player.kick(MINI_MESSAGE.deserialize(
+            AuthMessages.bilingual(core.messages(), MessageKey.AUTH_SESSION_DENIED,
+                MessageArg.text("hours", 24))));
+        return;
+      }
+      held.ifPresent(hold -> {
+        if (policy.spectator()) {
+          player.setGameMode(gameModeOf(hold.previousGameMode()));
+        }
+      });
+      player.setInvulnerable(false);
+      if (policy.hideFromOthers()) {
+        for (Player other : plugin.getServer().getOnlinePlayers()) {
+          if (!other.equals(player)) {
+            other.showPlayer(plugin, player);
+            player.showPlayer(plugin, other);
+          }
+        }
+      }
+      player.clearTitle();
+      player.sendActionBar(Component.empty());
+      player.sendMessage(MINI_MESSAGE.deserialize(inline(MessageKey.AUTH_HOLD_APPROVED,
+          MessageArg.text("hours", sessionHours))));
+    });
+  }
+
+  /**
+   * Runs {@code action} on the region that owns {@code player}.
+   *
+   * <p>The entity scheduler follows a player across regions and simply drops the task if they retire
+   * first — which is the correct outcome for every use here, because all of them are cosmetics applied
+   * to somebody who is still connected. On regular Paper this is the main thread, so the behaviour is
+   * unchanged; on Folia it is the difference between a release and a thread-ownership exception.</p>
+   */
+  private void onPlayerThread(Player player, Runnable action) {
+    player.getScheduler().run(plugin, ignored -> action.run(), null);
   }
 
   /** Countdown, timeout kicks, and the belt-and-braces re-read of the request row. */
@@ -213,8 +245,8 @@ public final class PaperAuthHold implements Listener {
     for (AuthHoldService.Hold hold : holds.tickExpired(now)) {
       Player player = plugin.getServer().getPlayer(hold.playerId());
       if (player != null && player.isOnline()) {
-        player.kick(MINI_MESSAGE.deserialize(
-            AuthMessages.bilingual(core.messages(), MessageKey.AUTH_HOLD_TIMEOUT)));
+        onPlayerThread(player, () -> player.kick(MINI_MESSAGE.deserialize(
+            AuthMessages.bilingual(core.messages(), MessageKey.AUTH_HOLD_TIMEOUT))));
       }
     }
     AuthSessionService sessions = core.authSessions();
@@ -234,8 +266,8 @@ public final class PaperAuthHold implements Listener {
         }
       }
       long seconds = Math.max(0L, (hold.deadline() - now) / 1000L);
-      player.sendActionBar(MINI_MESSAGE.deserialize(
-          inline(MessageKey.AUTH_HOLD_ACTIONBAR, MessageArg.text("seconds", seconds))));
+      onPlayerThread(player, () -> player.sendActionBar(MINI_MESSAGE.deserialize(
+          inline(MessageKey.AUTH_HOLD_ACTIONBAR, MessageArg.text("seconds", seconds)))));
     }
   }
 
