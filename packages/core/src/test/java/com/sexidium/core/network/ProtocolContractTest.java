@@ -54,6 +54,14 @@ class ProtocolContractTest {
    *       for, and a new table only a build that knows the op ever reads: an old node never writes a
    *       request, and a new node's request addressed to an old one simply sits PENDING until that
    *       node is upgraded, which is the deferred behaviour the delete path wants anyway.</li>
+   *   <li>{@code economy.changed} added, at {@code Protocol.VERSION = 1} — <b>no bump</b>. The
+   *       worked example again: a new topic an older node has no subscriber for. It carries no new
+   *       ownership or fencing meaning either — a peer that receives it only drops a cached balance
+   *       and re-reads the row, and a peer that never receives it re-reads on the cache TTL instead.
+   *       Every money mutation is decided by a conditional UPDATE against the row, so a node that
+   *       has never heard of this topic can still take and refuse payments correctly. The
+   *       {@code economy_accounts}/{@code economy_ledger} tables are likewise read only by builds
+   *       that know them.</li>
    *   <li>{@code auth.decided} added, at {@code Protocol.VERSION = 1} — <b>no bump</b>. It is the
    *       worked example below exactly: a new topic that a node compiled before it existed simply
    *       has no subscriber for. It is also advisory rather than load-bearing — a held player is
@@ -69,7 +77,7 @@ class ProtocolContractTest {
    * <em>grammar</em> of an existing topic, or the meaning of a column both builds write, is a bump.</p>
    */
   private static final String WIRE_DIGEST =
-      "fba1b787d00444fbcd76c676d6890f72e214eaf189344a3b0745cfc2d77a833f";
+      "72d8a0f8c32550cd2d5c168abc29a7aff33d4562632af3e9389f73553d1cbe4f";
 
   @Test
   @DisplayName("the wire surface has not moved without a conscious decision about the protocol tag")

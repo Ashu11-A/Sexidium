@@ -3,6 +3,7 @@ package com.sexidium.core.command;
 import com.sexidium.core.i18n.MessageKey;
 import com.sexidium.core.platform.CommandSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -17,8 +18,8 @@ import static com.sexidium.core.command.CommandText.lower;
  */
 final class AdminCommands {
   private static final String USAGE =
-      "<gray>Usage: <white>/sx admin <reload|stop|kit|bot|npc|net|backup|selftest|broadcast"
-          + "|map <tntwar|combat|edit>></white></gray>";
+      "<gray>Usage: <white>/sx admin <reload|stop|kit|bot|npc|net|backup|eco|selftest|broadcast"
+          + "|capabilities|map <tntwar|combat|edit>></white></gray>";
   private static final String BROADCAST_USAGE =
       "<gray>Usage: <white>/sx admin broadcast <seconds> <update|restart|shutdown></white></gray>";
   private static final String MAP_USAGE =
@@ -33,9 +34,11 @@ final class AdminCommands {
   private final MapEditorCommands mapEditor;
   private final NetworkCommands network;
   private final BackupCommands backup;
+  private final EconomyCommands economy;
 
   AdminCommands(CommandContext ctx, GameCommands game, BotCommands bot, NpcCommands npc,
-                TntWarCommands tntWar, CombatCommands combat, MapEditorCommands mapEditor) {
+                TntWarCommands tntWar, CombatCommands combat, MapEditorCommands mapEditor,
+                EconomyCommands economy) {
     this.ctx = ctx;
     this.game = game;
     this.bot = bot;
@@ -43,6 +46,7 @@ final class AdminCommands {
     this.tntWar = tntWar;
     this.combat = combat;
     this.mapEditor = mapEditor;
+    this.economy = economy;
     this.network = new NetworkCommands(ctx);
     this.backup = new BackupCommands(ctx);
   }
@@ -65,8 +69,10 @@ final class AdminCommands {
       case "npc" -> npc.handle(source, sub);
       case "net" -> network.handle(source, sub);
       case "backup" -> backup.handle(source, sub);
+      case "eco", "economy" -> economy.handleAdmin(source, sub);
       case "selftest" -> selfTest(source);
       case "broadcast" -> broadcast(source, sub);
+      case "capabilities" -> capabilities(source);
       case "map" -> handleMap(source, args);
       default -> ctx.send(source, USAGE);
     }
@@ -180,6 +186,71 @@ final class AdminCommands {
     }
   }
 
+  /**
+   * {@code /sx admin capabilities} — what this node can actually do, probed rather than assumed.
+   *
+   * <p>The one-line answer to "does it work on <em>that</em> server version?": instead of eyeballing
+   * a boot log across a version matrix, an operator (or the pipeline's log grep) reads one
+   * {@code SX-CAPABILITIES} line — platform, Minecraft version, pack format — followed by every
+   * capability this backend cannot serve and WHY. Missing is normal here: a plain Paper without
+   * BetterHud/SkinsRestorer/FancyNpcs legitimately lacks half the list.</p>
+   *
+   * <p>What it prints is the boot-time snapshot, not a fresh probe: the adapter resolves the registry
+   * once at enable and every reader sees that same answer, because these are facts about the running
+   * server rather than about the moment they were asked. Installing a plugin at runtime therefore does
+   * NOT change this output — restart the node to re-probe.</p>
+   *
+   * <p>The log prefix is {@code SX-CAPABILITIES}, matching the boot line's {@code SX-CAPABILITY}
+   * entries closely enough to grep both with {@code SX-CAPABILIT}.</p>
+   *
+   * <p>Never throws; a broken probe costs its line, not the command.</p>
+   */
+  private void capabilities(CommandSource source) {
+    com.sexidium.core.platform.capability.CapabilityRegistry registry;
+    String header;
+    try {
+      // Inside the guard, ALL of them: versions() runs the adapter's version-probe chain and
+      // platformType() reads the server brand, either of which can meet a fork it does not understand
+      // just as capabilities() can. Leaving them above the try made the "never throws" promise in the
+      // javadoc wider than the code that backed it.
+      var versions = ctx.server.versions();
+      registry = ctx.server.capabilities();
+      header = "SX-CAPABILITIES platform=" + ctx.server.platformType()
+          + " minecraft=" + versions.version()
+          + " pack-format=" + (versions.packFormat() < 0 ? "unknown" : versions.packFormat());
+    } catch (RuntimeException | LinkageError failed) {
+      String line = "SX-CAPABILITIES ok=false detail=" + failed.getClass().getSimpleName();
+      ctx.server.logger().warning(line);
+      ctx.send(source, "<red>" + line + "</red>");
+      return;
+    }
+    ctx.server.logger().info(header);
+
+    com.sexidium.core.platform.capability.Capability[] all =
+        com.sexidium.core.platform.capability.Capability.values();
+    List<String> unavailable = new ArrayList<>();
+    for (com.sexidium.core.platform.capability.Capability capability : all) {
+      if (!registry.has(capability)) {
+        // Escape: reasons quote reflection failures, whose angle brackets are not MiniMessage.
+        String reason = registry.reason(capability)
+            .map(text -> text.replace("<", "\\<"))
+            .orElse("unavailable");
+        unavailable.add("<white>" + capability.name() + "</white><red> no</red><gray> — " + reason
+            + "</gray>");
+      }
+    }
+    ctx.send(source, "<green>" + header.replace("<", "\\<") + "</green>");
+    if (unavailable.isEmpty()) {
+      ctx.send(source, "<green>All " + all.length + " capabilities available.</green>");
+      return;
+    }
+    ctx.send(source, "<gray>" + (all.length - unavailable.size()) + "/" + all.length
+        + " available; the rest:</gray>");
+    for (String entry : unavailable) {
+      ctx.send(source, entry);
+    }
+  }
+
   /** {@code args = [admin, map, <tool>, …]}. */
   private void handleMap(CommandSource source, String[] args) {
     if (args.length < 3) {
@@ -198,8 +269,8 @@ final class AdminCommands {
   List<String> suggest(CommandSource source, String[] args) {
     if (args.length == 2) {
       return ctx.filter(
-          List.of("reload", "stop", "kit", "bot", "npc", "net", "backup", "selftest",
-              "broadcast", "map"),
+          List.of("reload", "stop", "kit", "bot", "npc", "net", "backup", "eco", "selftest",
+              "broadcast", "capabilities", "map"),
           args[1]);
     }
     String[] sub = Arrays.copyOfRange(args, 1, args.length);
@@ -214,6 +285,7 @@ final class AdminCommands {
       case "npc" -> npc.suggest(sub);
       case "net" -> network.suggest(source, sub);
       case "backup" -> backup.suggest(source, sub);
+      case "eco", "economy" -> economy.suggestAdmin(sub);
       case "map" -> suggestMap(args);
       default -> List.of();
     };

@@ -1655,6 +1655,84 @@ ranks:
     experience-interval-seconds: 60
 
 # ------------------------------------------------------------
+# Money - a currency Sexidium OWNS and other plugins read through Vault.
+#
+# Sexidium is the PROVIDER, not a consumer. VaultUnlocked's own jar contains no economy at all, only
+# a ServicesManager lookup, so a network that "uses Vault for money" and installs nothing else has no
+# money. Sexidium registers its own Economy into the services manager instead; shops, jobs and the
+# rest then see Sexidium's balances with no extra plugin and no second source of truth.
+#
+# Balances are stored as CENTS in an integer column, never as a decimal. SqlDialect has no decimal
+# type token and SQLite (the default backend) has no real DECIMAL, so a decimal column would round
+# through a double -- the same reason network_nodes.tps is stored scaled x100.
+#
+# EVERY AMOUNT BELOW IS QUOTED, and it has to be. Bukkit's getString returns value.toString(), so an
+# unquoted 100.00 arrives in Java as the string "100.0"; a quoted '100.00' arrives exactly as typed
+# and is parsed with BigDecimal, which is the only path that has no float error in it.
+# ------------------------------------------------------------
+economy:
+  enabled: true
+
+  currency:
+    # The id other plugins address this currency by through Vault's multi-currency methods.
+    id: dollar
+    symbol: '$'
+    name-singular: dollar
+    name-plural: dollars
+    # true -> "$1,234.56"; false -> "1.234,56 $".
+    symbol-before: true
+
+  # What a brand-new player has. Also what an account with no row yet REPORTS, so the sidebar is
+  # never wrong for the first seconds of somebody's very first join.
+  starting-balance: '100.00'
+
+  format:
+    grouping: true
+    # BCP-47 language tag; decides the grouping and decimal separators. An unrecognised tag falls
+    # back to en-US rather than failing the boot.
+    locale: en-US
+
+  pay:
+    enabled: true
+    minimum: '0.01'
+    maximum: '1000000.00'
+    # Node-local, like every other cooldown: the player is on exactly one node.
+    cooldown-seconds: 0
+    # Whether /pay may target a player who is offline, resolved by name against the account table.
+    allow-offline: true
+    # Paying yourself is refused by default -- it is only ever a typo or an exploit attempt.
+    self: false
+
+  limits:
+    # The largest balance an account may hold. '0.00' means unbounded.
+    maximum-balance: '0.00'
+
+  vault:
+    # Register Sexidium as the server's Economy provider. Turn this off ONLY if another plugin is
+    # meant to be the economy; two providers is the bug class where half the server reads one
+    # balance and half reads the other.
+    provider: true
+    # Also register the LEGACY net.milkbowl.vault.economy.Economy interface. VaultUnlocked does not
+    # bridge vault2 back to vault1, and most shop plugins are still vault1-only, so leaving this on
+    # is what makes them work at all.
+    register-legacy: true
+    # Service priority: lowest | low | normal | high | highest.
+    priority: normal
+
+  # How long a node trusts its cached balance before re-reading the row. The self-healing net for a
+  # dropped economy.changed bus message -- a peer's change is never missed for longer than this.
+  cache-ttl-seconds: 10
+
+  ledger:
+    # One signed audit row per movement. Without it, "my money vanished" is unanswerable.
+    enabled: true
+    # 0 keeps every row forever.
+    retention-days: 30
+
+  baltop:
+    size: 10
+
+# ------------------------------------------------------------
 # Discord authentication - players link once with /sx auth, then /auth <code>.
 # ------------------------------------------------------------
 auth:

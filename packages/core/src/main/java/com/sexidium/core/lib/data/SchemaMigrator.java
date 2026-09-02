@@ -277,7 +277,78 @@ public final class SchemaMigrator {
     // first session immediately -- which removes a reconnect from the very first join.
     addColumnIfMissing(conn, "auth_codes", "ip_hash", keyText);
     createExperiencePlayersTable(conn, dialect);
+    createEconomyTables(conn, dialect);
     createNetworkTables(conn, dialect);
+  }
+
+  /**
+   * The money ledger. A SEPARATE table from {@code players} on purpose, and the reason is not tidiness:
+   *
+   * <ul>
+   *   <li>{@code players} rows are created lazily by {@code RankService.upsert}, only when points are
+   *       first awarded. A player who has never finished a match has no row — and money has to exist
+   *       for everybody from their first join, or the starting balance is a lie.</li>
+   *   <li>{@code players} is READ AGGREGATED BY DISCORD ACCOUNT ({@code RankService.aggregate}). Money
+   *       must never be aggregated across alts: two names summed into one pot means a player can pay
+   *       themselves.</li>
+   *   <li>Vault's shared accounts and account deletion need an {@code is_player} flag and an
+   *       owner/member model that has no business inside the progression table.</li>
+   * </ul>
+   *
+   * <p>{@code balance} is MINOR UNITS (cents) in an intType column — never a decimal, never a REAL.
+   * {@link SqlDialect} has no decimal token, and SQLite (the default backend, and the one every test
+   * runs against) has no real DECIMAL type, so a decimal column would round through a double on
+   * exactly the backend nobody would notice it on. Same call, same reason, as {@code network_nodes.tps}
+   * being scaled ×100.</p>
+   *
+   * <p>The indexes are created HERE and not in the index block of {@code migrateLocked}: that block
+   * runs before this method is called, and an index on a table that does not exist yet is an error on
+   * every dialect.</p>
+   */
+  private static void createEconomyTables(Connection conn, SqlDialect dialect) throws SQLException {
+    String keyText = dialect.keyText();
+    String intType = dialect.intType();
+    try (Statement st = conn.createStatement()) {
+      st.executeUpdate("""
+          CREATE TABLE IF NOT EXISTS economy_accounts (
+            account_id  %1$s PRIMARY KEY,
+            name        %1$s NOT NULL,
+            is_player   %2$s NOT NULL DEFAULT 1,
+            balance     %2$s NOT NULL DEFAULT 0,
+            created_at  %2$s NOT NULL DEFAULT 0,
+            updated_at  %2$s NOT NULL DEFAULT 0
+          )""".formatted(keyText, intType));
+      // Why a ledger and not just a balance: "an admin says a player's money vanished" is otherwise
+      // unanswerable. amount is SIGNED minor units; balance_after is what the row settled at, so a
+      // gap in the chain is visible without recomputing anything.
+      st.executeUpdate("""
+          CREATE TABLE IF NOT EXISTS economy_ledger (
+            id            %1$s,
+            account_id    %2$s NOT NULL,
+            counterparty  %2$s,
+            op            %2$s NOT NULL,
+            amount        %3$s NOT NULL,
+            balance_after %3$s NOT NULL,
+            reason        %2$s,
+            actor         %2$s,
+            node_id       %2$s,
+            created_at    %3$s NOT NULL DEFAULT 0
+          )""".formatted(dialect.autoIncrementPrimaryKey(), keyText, intType));
+    }
+
+    // /balance <name> and every offline /pay target resolve by NAME, so it must be a seek.
+    //
+    // Deliberately NOT unique. Names are not unique OVER TIME — a player renames, somebody else takes
+    // the old name — and createUniqueIndex logs SEVERE and degrades to a plain index forever after the
+    // first collision, which would turn an ordinary rename into a permanent boot-time complaint.
+    createIndex(conn, dialect, "idx_economy_accounts_name", "economy_accounts",
+        dialect.caseInsensitiveIndexExpression("name"), false, null);
+    // /baltop is ORDER BY balance DESC LIMIT n and nothing else.
+    createIndex(conn, dialect, "idx_economy_accounts_balance", "economy_accounts", "balance", false, null);
+    createIndex(conn, dialect, "idx_economy_ledger_account", "economy_ledger",
+        "account_id, created_at", false, null);
+    // The retention sweep reads created_at across every account.
+    createIndex(conn, dialect, "idx_economy_ledger_created", "economy_ledger", "created_at", false, null);
   }
 
   /**

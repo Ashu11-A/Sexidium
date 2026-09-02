@@ -43,6 +43,8 @@ public final class PaperSexidiumPlugin extends JavaPlugin {
   private AuthService authService;
   private PaperKitAdapter kitAdapter;
   private PaperConfigurationAdapter configurationAdapter;
+  /** Sexidium's Economy service registration, or a bridge that decided not to register one. */
+  private com.sexidium.paper.adapter.economy.PaperEconomyBridge economyBridge;
 
   @Override
   public void onEnable() {
@@ -124,6 +126,19 @@ public final class PaperSexidiumPlugin extends JavaPlugin {
     // the driver is off, simply renders every declared surface on the scoreboard sidebar instead.
     installHudDriver(serverAdapter);
 
+    // Snapshot AFTER installHudDriver: the HUD gate reads the driver's configured state, and the
+    // adapter caches the first probe for the life of the process — asking earlier would pin a
+    // "no HUD_OVERLAY" miss taken while the driver was still at its disabled default.
+    logVersionAndCapabilities(serverAdapter);
+
+    // Sexidium is the economy PROVIDER, not a consumer: VaultUnlocked contains no economy of its
+    // own, so nothing here would exist to read. Registered before the commands so /pay and /balance
+    // can never run against a server where another plugin has quietly claimed the service first --
+    // the bridge names any incumbent provider in the log before it registers.
+    this.economyBridge = new com.sexidium.paper.adapter.economy.PaperEconomyBridge(
+        this, core, configurationAdapter);
+    economyBridge.register();
+
     // One shared command service backs the /sexidium root and every top-level shortcut, so they gate
     // permissions and dispatch identically. The shortcuts just prepend their subcommand token.
     CoreCommandService commandService = new CoreCommandService(core, this::reloadSexidium);
@@ -132,6 +147,9 @@ public final class PaperSexidiumPlugin extends JavaPlugin {
     bindCommand("menu", new PaperAliasCommand(commandService, "menu"));
     bindCommand("lobby", new PaperAliasCommand(commandService, "lobby"));
     bindCommand("friend", new PaperAliasCommand(commandService, "friend"));
+    bindCommand("pay", new PaperAliasCommand(commandService, "pay"));
+    bindCommand("balance", new PaperAliasCommand(commandService, "balance")); // + /bal, /money aliases
+    bindCommand("baltop", new PaperAliasCommand(commandService, "baltop"));
     getLogger().info(brandLabel + " Paper adapter enabled.");
     // THE line a rolling update waits on. `Done (` is not enough on its own: Paper prints it even
     // when a plugin threw during enable and was disabled, which has been seen live. This one is
@@ -142,6 +160,35 @@ public final class PaperSexidiumPlugin extends JavaPlugin {
         + " build=" + core.network().buildIdentity().publishedVersion()
         + " content=" + core.network().contentManifest().digest()
         + " players=" + getServer().getOnlinePlayers().size());
+  }
+
+  /**
+   * The boot-time version/capability line (Plan.md Stage 0b/0e).
+   *
+   * <p>Two purposes. First, "does it work on 26.3?" becomes a one-line grep instead of an eyeball:
+   * {@code SX-VERSION} carries the Minecraft version and pack format, and every capability this
+   * server cannot serve is named with its reason right below it — missing entries are normal, not
+   * errors. Second, the hardcore-view probe inside the registry is a login-packet SHAPE check: when
+   * the next Minecraft adds a record component, it announces itself here at boot instead of as a
+   * silent in-game regression.</p>
+   */
+  private void logVersionAndCapabilities(PaperServerAdapter serverAdapter) {
+    try {
+      var versions = serverAdapter.versions();
+      getLogger().info("SX-VERSION minecraft=" + versions.version()
+          + " pack-format=" + (versions.packFormat() < 0 ? "unknown" : String.valueOf(versions.packFormat())));
+      var registry = serverAdapter.capabilities();
+      for (com.sexidium.core.platform.capability.Capability capability
+          : com.sexidium.core.platform.capability.Capability.values()) {
+        if (!registry.has(capability)) {
+          getLogger().info("SX-CAPABILITY no=" + capability.name()
+              + registry.reason(capability).map(reason -> " (" + reason + ")").orElse(""));
+        }
+      }
+    } catch (RuntimeException | LinkageError failed) {
+      // A diagnostic that cannot run must never cost the enable.
+      getLogger().fine("Version/capability logging skipped: " + failed);
+    }
   }
 
   /**
@@ -334,6 +381,12 @@ public final class PaperSexidiumPlugin extends JavaPlugin {
 
   @Override
   public void onDisable() {
+    // BEFORE core.close(): the registered Economy delegates to core's EconomyService, and leaving it
+    // in the services manager while that service is shutting down hands any plugin still unloading a
+    // provider backed by a closed database.
+    if (economyBridge != null) {
+      economyBridge.unregister();
+    }
     if (core != null) {
       core.close();
     }

@@ -33,10 +33,16 @@ softdepend:
   - SkinsRestorer
   - floodgate
   - Geyser-Spigot
+  # VaultUnlocked. Its plugin.yml declares `name: Vault` (it is a drop-in replacement for the original
+  # Vault, so it takes the original's name) -- asking for "VaultUnlocked" here would match nothing.
+  # Its `load: STARTUP` means it is already up by our onEnable, so no delayed registration is needed.
+  # SOFT and not hard: Sexidium's money works in-game without it; what is missing is other plugins
+  # being able to see the balances.
+  - Vault
 commands:
   sexidium:
     description: Main command for Sexidium.
-    usage: /sx <menu|start|experience|lobby|friend|exit|join|top|rank|auth|admin>
+    usage: /sx <menu|start|experience|lobby|friend|pay|balance|baltop|exit|join|top|rank|auth|admin>
     aliases: [sx]
   exit:
     description: Leave your current Sexidium game.
@@ -55,10 +61,32 @@ commands:
     description: Manage your Sexidium friends.
     usage: /friend [add|accept|remove|list|requests]
     permission: sexidium.play
+  pay:
+    description: Send money to another player.
+    usage: /pay <player> <amount>
+    permission: sexidium.economy.pay
+  balance:
+    description: Check a money balance.
+    usage: /balance [player]
+    # /bal and /money are the two spellings players actually type. Both are aliases of one command
+    # rather than three commands, so they cannot drift apart -- but see known-issues F-ECO1: another
+    # plugin claiming either name means Bukkit namespaces the loser as /sexidium:balance.
+    aliases: [bal, money]
+    permission: sexidium.play
+  baltop:
+    description: The richest players on the network.
+    usage: /baltop [page]
+    permission: sexidium.play
 permissions:
   sexidium.play:
     description: Use player-facing Sexidium commands.
     default: true
   sexidium.admin:
     description: Manage Sexidium games.
+    default: op
+  sexidium.economy.pay:
+    description: Send money to other players.
+    default: true
+  sexidium.economy.balance.others:
+    description: Look up another player's balance.
     default: op

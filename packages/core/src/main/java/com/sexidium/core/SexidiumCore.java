@@ -26,6 +26,10 @@ public final class SexidiumCore implements AutoCloseable {
   private final MatchRepository matchRepository;
   private final RankService rankService;
   private final FriendService friendService;
+  /** Display rules for money. Built even with no database: the noop port still formats nothing. */
+  private final com.sexidium.core.economy.CurrencyFormat currencyFormat;
+  /** The money ledger, or null when there is no database — exactly like {@link #ranks()}. */
+  private final com.sexidium.core.economy.EconomyService economyService;
   private final LobbyManager lobbyManager;
   private final AuthLoginService authLoginService;
   private final com.sexidium.core.auth.AuthSessionService authSessionService;
@@ -88,6 +92,17 @@ public final class SexidiumCore implements AutoCloseable {
     this.friendService = dependencies.database() == null
         ? null
         : new FriendService(serverAdapter.logger(), dependencies.database());
+    // Money depends on neither ranks nor auth: a balance is a fact about a Minecraft account, and
+    // making it wait on a Discord link would mean a player who never links has no money at all.
+    this.currencyFormat = new com.sexidium.core.economy.CurrencyFormat(serverAdapter.configuration());
+    this.economyService = dependencies.database() == null
+        ? null
+        : new com.sexidium.core.economy.EconomyService(
+            serverAdapter.configuration(),
+            serverAdapter.logger(),
+            dependencies.database(),
+            currencyFormat,
+            networkService.identity().nodeId());
     // The frictionless half of the gate: IP+name sessions, Discord approvals and premium
     // verification. Built here (not injected) because everything it needs is already in scope, and
     // null when there is no database at all -- the code gate below then behaves exactly as before.
@@ -168,6 +183,15 @@ public final class SexidiumCore implements AutoCloseable {
             com.sexidium.core.network.NetworkBus.Topics.RANK_CHANGED, uuid, name == null ? "" : name);
       });
     }
+    // A SIBLING of the block above and deliberately not inside it: money exists on a node with a
+    // database and no ranks, and nesting this under `rankService != null` would have silently made
+    // every balance node-local the day somebody turned ranks off.
+    if (economyService != null) {
+      economyService.setBalanceChangeListener((accountId, accountName) ->
+          networkService.bus().publish(
+              com.sexidium.core.network.NetworkBus.Topics.ECONOMY_CHANGED,
+              accountId.toString(), accountName == null ? "" : accountName));
+    }
     this.resourcePackServer = new com.sexidium.core.lib.net.ResourcePackServer(serverAdapter);
     this.botManager = new BotManager(serverAdapter, dependencies.database());
     RankAwardPort rankAwardPort = rankService == null ? RankAwardPort.noop() : rankService;
@@ -176,8 +200,17 @@ public final class SexidiumCore implements AutoCloseable {
     this.lobbyManager = new LobbyManager(serverAdapter, gameManager, friendService);
     this.gameEventRouter = new GameEventRouter(serverAdapter, gameManager, lobbyManager);
     // Push real-time join/leave events to the Discord bot.
-    this.gameEventRouter.setPlayerJoinListener(
-        player -> bridgeClient.emitPlayerJoin(player.uniqueId().toString(), player.name()));
+    // ONE slot, two consumers, so this composes rather than assigns: setPlayerJoinListener holds a
+    // single listener, and a second call would have replaced the Discord bridge emit above with the
+    // account materialisation below -- taking join announcements off Discord to create a money row.
+    this.gameEventRouter.setPlayerJoinListener(player -> {
+      bridgeClient.emitPlayerJoin(player.uniqueId().toString(), player.name());
+      if (economyService != null) {
+        // Async: a first join must not wait on an INSERT, and balance() already answers the
+        // starting balance for a player whose row does not exist yet.
+        economyService.ensureAccountAsync(player.uniqueId(), player.name());
+      }
+    });
     this.gameEventRouter.setPlayerLeaveListener(
         player -> bridgeClient.emitPlayerLeave(player.uniqueId().toString(), player.name()));
     this.mapEditorService = new com.sexidium.core.world.map.editor.MapEditorService(serverAdapter);
@@ -663,6 +696,9 @@ public final class SexidiumCore implements AutoCloseable {
       if (matchRepository != null) {
         matchRepository.flushWrites();
       }
+      if (economyService != null) {
+        economyService.flushWrites();
+      }
     }
   }
 
@@ -694,6 +730,11 @@ public final class SexidiumCore implements AutoCloseable {
     messageService.reload();
     dependencies.kitAdapter().reload();
     lobbyHud.reload();
+    if (economyService != null) {
+      economyService.reload();
+    } else {
+      currencyFormat.reload();
+    }
     // Pool sizes were restart-only, which made tuning them on a live server impossible: the config key
     // changed and nothing read it again until the next boot.
     if (dependencies.serverAdapter().worlds() instanceof AbstractWorldControl worldControl) {
@@ -750,6 +791,9 @@ public final class SexidiumCore implements AutoCloseable {
     if (rankService != null) {
       rankService.shutdown();
     }
+    if (economyService != null) {
+      economyService.shutdown();
+    }
   }
 
   public MessageService messages() {
@@ -800,6 +844,20 @@ public final class SexidiumCore implements AutoCloseable {
 
   public RankService ranks() {
     return rankService;
+  }
+
+  /** The money ledger, or {@code null} when this node has no database. Exactly like {@link #ranks()}. */
+  public com.sexidium.core.economy.EconomyService economy() {
+    return economyService;
+  }
+
+  /**
+   * The read seam every non-economy subsystem uses. NEVER null — a node with no database gets
+   * {@code EconomyPort.noop()}, so the sidebar (and anything else that only reads a balance) needs no
+   * null check of its own.
+   */
+  public com.sexidium.core.economy.EconomyPort economyPort() {
+    return economyService == null ? com.sexidium.core.economy.EconomyPort.noop() : economyService;
   }
 
   public com.sexidium.core.data.RankTagService rankTags() {
@@ -1322,6 +1380,22 @@ public final class SexidiumCore implements AutoCloseable {
     // consumers that read the row once and then stop looking: a live match (composed at start) and
     // an open menu (drawn at open). EXPERIENCE_UPDATED is subscribed for them, next to the rest of
     // the experience wiring in start(), where the service that owns both of them is.
+
+    // A peer changed a balance. Nothing is recomputed here: the row is the truth, so this only drops
+    // the cached copy and lets the next read re-fetch it.
+    networkService.bus().subscribe(
+        com.sexidium.core.network.NetworkBus.Topics.ECONOMY_CHANGED,
+        (topic, key, payload, originNode) -> {
+          if (economyService == null || key == null) {
+            return;
+          }
+          try {
+            economyService.invalidate(java.util.UUID.fromString(key));
+          } catch (IllegalArgumentException notAUuid) {
+            // A peer on a future protocol keying this topic by something else. Ignored rather than
+            // logged: an unparsable key from a newer build is a forward-compat event, not a fault.
+          }
+        });
 
     networkService.bus().subscribe(
         com.sexidium.core.network.NetworkBus.Topics.RANK_CHANGED,

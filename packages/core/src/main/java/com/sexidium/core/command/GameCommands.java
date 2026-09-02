@@ -431,6 +431,8 @@ final class GameCommands {
     ctx.send(source, MessageKey.COMMAND_HELP_EXPERIENCE);
     ctx.send(source, MessageKey.COMMAND_HELP_LOBBY);
     ctx.send(source, MessageKey.COMMAND_HELP_FRIEND);
+    ctx.send(source, MessageKey.COMMAND_HELP_PAY);
+    ctx.send(source, MessageKey.COMMAND_HELP_BALANCE);
     ctx.send(source, MessageKey.COMMAND_HELP_EXIT);
     ctx.send(source, MessageKey.COMMAND_HELP_JOIN);
     ctx.send(source, MessageKey.COMMAND_HELP_TOP);

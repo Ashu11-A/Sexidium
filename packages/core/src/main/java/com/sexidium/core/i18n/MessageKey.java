@@ -33,7 +33,9 @@ public enum MessageKey {
   COMMAND_HELP_FRIEND("command.help.friend"),
   COMMAND_HELP_JOIN("command.help.join"),
   COMMAND_HELP_LOBBY("command.help.lobby"),
+  COMMAND_HELP_BALANCE("command.help.balance"),
   COMMAND_HELP_MENU("command.help.menu"),
+  COMMAND_HELP_PAY("command.help.pay"),
   COMMAND_HELP_RANK("command.help.rank"),
   COMMAND_HELP_START("command.help.start"),
   COMMAND_HELP_TITLE("command.help.title"),
@@ -116,6 +118,35 @@ public enum MessageKey {
   FRIEND_JOIN_NOT_FRIENDS("friend.join-not-friends"),
   FRIEND_JOIN_NO_PARTY("friend.join-no-party"),
   FRIEND_JOIN_SUCCESS("friend.join-success"),
+  ECONOMY_UNAVAILABLE("economy.unavailable"),
+  ECONOMY_DISABLED("economy.disabled"),
+  ECONOMY_BALANCE_SELF("economy.balance.self"),
+  ECONOMY_BALANCE_OTHER("economy.balance.other"),
+  ECONOMY_BALANCE_UNKNOWN("economy.balance.unknown"),
+  ECONOMY_INVALID_AMOUNT("economy.invalid-amount"),
+  ECONOMY_AMOUNT_NOT_POSITIVE("economy.amount-not-positive"),
+  ECONOMY_INSUFFICIENT_FUNDS("economy.insufficient-funds"),
+  ECONOMY_LIMIT_EXCEEDED("economy.limit-exceeded"),
+  ECONOMY_PAY_USAGE("economy.pay.usage"),
+  ECONOMY_PAY_DISABLED("economy.pay.disabled"),
+  ECONOMY_PAY_SELF("economy.pay.self"),
+  ECONOMY_PAY_MINIMUM("economy.pay.minimum"),
+  ECONOMY_PAY_MAXIMUM("economy.pay.maximum"),
+  ECONOMY_PAY_COOLDOWN("economy.pay.cooldown"),
+  ECONOMY_PAY_SENT("economy.pay.sent"),
+  ECONOMY_PAY_RECEIVED("economy.pay.received"),
+  ECONOMY_PAY_FAILED("economy.pay.failed"),
+  ECONOMY_BALTOP_TITLE("economy.baltop.title"),
+  ECONOMY_BALTOP_ROW("economy.baltop.row"),
+  ECONOMY_BALTOP_EMPTY("economy.baltop.empty"),
+  ECONOMY_ADMIN_USAGE("economy.admin.usage"),
+  ECONOMY_ADMIN_GIVEN("economy.admin.given"),
+  ECONOMY_ADMIN_TAKEN("economy.admin.taken"),
+  ECONOMY_ADMIN_SET("economy.admin.set"),
+  ECONOMY_ADMIN_RESET("economy.admin.reset"),
+  ECONOMY_ADMIN_NOTIFY_GIVEN("economy.admin.notify-given"),
+  ECONOMY_ADMIN_NOTIFY_TAKEN("economy.admin.notify-taken"),
+  ECONOMY_ADMIN_NOTIFY_SET("economy.admin.notify-set"),
   GAME_ALREADY_RUNNING("game.already-running"),
   GAME_MIN_PLAYERS("game.min-players"),
   GAME_UNKNOWN_MODE("game.unknown-mode"),
@@ -306,6 +337,12 @@ public enum MessageKey {
    */
   MAP_AUTHORITY_REQUIRED("map.authority-required"),
   LOBBY_HUD_TITLE("lobby.hud.title"),
+  /**
+   * The sidebar's money row. Declared here rather than next to the economy block on purpose: the HUD
+   * is the consumer of {@code EconomyPort} and this is the key its row is drawn from, so it belongs
+   * with the other {@code LOBBY_HUD_*} constants that the same renderer reads.
+   */
+  LOBBY_HUD_BALANCE("lobby.hud.balance"),
   LOBBY_HUD_PLAYERS("lobby.hud.players"),
   LOBBY_HUD_PING("lobby.hud.ping"),
   LOBBY_HUD_FRIENDS("lobby.hud.friends"),
@@ -395,6 +432,23 @@ public enum MessageKey {
   EXPERIENCE_DEATHRESETS_DURATION("experience.deathresets.hud.duration"),
   EXPERIENCE_DEATHRESETS_DAYS("experience.deathresets.hud.days"),
   EXPERIENCE_DEATHRESETS_RESETS("experience.deathresets.hud.resets"),
+  // The boss checklist. Each rung's row is a bare <value> pass-through — the whole line is pushed,
+  // because which of the two state templates below applies is a runtime fact and a row's template is
+  // fixed at declaration — and the two state templates are what a defeated rung differs from a
+  // pending one by. There is no tally row: four lines that say which are ticked do not also need a
+  // number saying how many.
+  EXPERIENCE_DEATHRESETS_BOSS_ROW("experience.deathresets.hud.boss-row"),
+  EXPERIENCE_DEATHRESETS_BOSS_PENDING("experience.deathresets.hud.boss-pending"),
+  EXPERIENCE_DEATHRESETS_BOSS_DEFEATED("experience.deathresets.hud.boss-defeated"),
+  // The boss names themselves. Spelled out here rather than left to a client-side <lang:entity.*> tag:
+  // the overlay renderer flattens a component to plain text before BetterHud ever sees it, and a
+  // translatable component flattens to its key, not to a name anybody can read.
+  EXPERIENCE_DEATHRESETS_BOSS_ELDER_GUARDIAN("experience.deathresets.boss.elder-guardian"),
+  EXPERIENCE_DEATHRESETS_BOSS_WARDEN("experience.deathresets.boss.warden"),
+  EXPERIENCE_DEATHRESETS_BOSS_WITHER("experience.deathresets.boss.wither"),
+  EXPERIENCE_DEATHRESETS_BOSS_ENDER_DRAGON("experience.deathresets.boss.ender-dragon"),
+  EXPERIENCE_DEATHRESETS_BOSS_FELLED("experience.deathresets.boss-felled"),
+  EXPERIENCE_DEATHRESETS_BOSSES_COMPLETE("experience.deathresets.bosses-complete"),
   EXPERIENCE_SHAREDLIFE_POOL("experience.sharedlife.hud.pool"),
   EXPERIENCE_SHAREDLIFE_AMOUNT("experience.sharedlife.hud.amount"),
   EXPERIENCE_RANDOMEVENTS_COUNTDOWN("experience.randomevents.hud.countdown"),

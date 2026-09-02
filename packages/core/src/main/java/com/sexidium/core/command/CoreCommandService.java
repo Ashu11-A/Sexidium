@@ -15,7 +15,7 @@ import static com.sexidium.core.command.CommandText.equalsAny;
 import static com.sexidium.core.command.CommandText.lower;
 
 /**
- * Public facade for the {@code /sx} command tree. Adapters (Paper/NeoForge) and tests build this with
+ * Public facade for the {@code /sx} command tree. Adapters and tests build this with
  * {@code (core, reloadCallback)} and call {@link #execute} / {@link #suggest}; the actual work is split
  * across focused, package-private handlers ({@link GameCommands}, {@link LobbyCommands}, …) that share a
  * {@link CommandContext}. This class owns only the permission gate and the root dispatch/suggestion table.
@@ -25,12 +25,15 @@ public final class CoreCommandService {
   public static final String PLAY_PERMISSION = "sexidium.play";
   public static final String AUTH_PERMISSION = "sexidium.auth";
 
-  private static final Set<String> PLAYER_SUBCOMMANDS = Set.of("menu", "exit", "leave", "join", "experience", "lobby", "friend", "top", "rank", "race");
+  private static final Set<String> PLAYER_SUBCOMMANDS = Set.of("menu", "exit", "leave", "join", "experience", "lobby", "friend", "pay", "balance", "bal", "money", "baltop", "top", "rank", "race");
   private static final Set<String> AUTH_SUBCOMMANDS = Set.of("auth");
   private static final Set<String> ADMIN_SUBCOMMANDS = Set.of("admin");
+  // `bal` and `money` gate correctly through PLAYER_SUBCOMMANDS but stay OUT of this list on purpose:
+  // completion should offer one canonical spelling of a command, not three that do the same thing.
   private static final List<String> ROOT_ORDER = List.of(
       "help", "menu", "start", "exit", "leave", "join",
-      "experience", "lobby", "friend", "top", "rank", "race", "auth", "admin");
+      "experience", "lobby", "friend", "pay", "balance", "baltop",
+      "top", "rank", "race", "auth", "admin");
 
   /** Stores for the unified in-world spawn sidecars edited by {@code /sx admin map combat} and {@code /sx lobby}. */
   private static final SpawnPointStore COMBAT_SPAWNS = new SpawnPointStore(SpawnPointStore.COMBAT);
@@ -44,6 +47,7 @@ public final class CoreCommandService {
   private final GameCommands gameCommands;
   private final LobbyCommands lobbyCommands;
   private final FriendCommands friendCommands;
+  private final EconomyCommands economyCommands;
   private final NpcCommands npcCommands;
   private final TntWarCommands tntWarCommands;
   private final CombatCommands combatCommands;
@@ -62,6 +66,7 @@ public final class CoreCommandService {
     this.gameCommands = new GameCommands(context, experienceCommands);
     this.lobbyCommands = new LobbyCommands(context, LOBBY_SPAWNS);
     this.friendCommands = new FriendCommands(context);
+    this.economyCommands = new EconomyCommands(context);
     this.npcCommands = new NpcCommands(context);
     this.tntWarCommands = new TntWarCommands(context);
     this.combatCommands = new CombatCommands(context, COMBAT_SPAWNS);
@@ -69,7 +74,7 @@ public final class CoreCommandService {
     this.botCommands = new BotCommands(context);
     this.mapEditorCommands = new MapEditorCommands(context);
     this.adminCommands = new AdminCommands(context, gameCommands, botCommands, npcCommands,
-        tntWarCommands, combatCommands, mapEditorCommands);
+        tntWarCommands, combatCommands, mapEditorCommands, economyCommands);
   }
 
   public boolean execute(CommandSource source, String[] args) {
@@ -94,6 +99,9 @@ public final class CoreCommandService {
       case "experience" -> experienceCommands.handle(safeSource, safeArgs);
       case "lobby" -> lobbyCommands.handle(safeSource, safeArgs);
       case "friend" -> friendCommands.handle(safeSource, safeArgs);
+      case "pay" -> economyCommands.handlePay(safeSource, safeArgs);
+      case "balance", "bal", "money" -> economyCommands.handleBalance(safeSource, safeArgs);
+      case "baltop" -> economyCommands.handleBaltop(safeSource, safeArgs);
       case "top" -> gameCommands.handleTop(safeSource);
       case "rank" -> gameCommands.handleRank(safeSource, safeArgs.length > 1 ? safeArgs[1] : null);
       case "race" -> raceCommands.handle(safeSource, safeArgs);
@@ -124,6 +132,9 @@ public final class CoreCommandService {
     return switch (subcommand) {
       case "start" -> gameCommands.suggestStart(safeArgs);
       case "friend" -> friendCommands.suggest(safeArgs);
+      case "pay" -> economyCommands.suggestPay(safeArgs);
+      case "balance", "bal", "money" -> economyCommands.suggestBalance(safeSource, safeArgs);
+      case "baltop" -> economyCommands.suggestBaltop(safeArgs);
       case "join" -> gameCommands.suggestJoin(safeArgs);
       case "experience" -> experienceCommands.suggest(safeSource, safeArgs);
       case "lobby" -> lobbyCommands.suggest(safeSource, safeArgs);

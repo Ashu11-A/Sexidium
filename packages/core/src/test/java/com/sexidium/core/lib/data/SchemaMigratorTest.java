@@ -30,6 +30,8 @@ class SchemaMigratorTest {
       assertTrue(tables.contains("match_players"));
       assertTrue(tables.contains("friends"));
       assertTrue(tables.contains("friend_requests"));
+      assertTrue(tables.contains("economy_accounts"));
+      assertTrue(tables.contains("economy_ledger"));
     }
   }
 
@@ -60,6 +62,33 @@ class SchemaMigratorTest {
       assertTrue(columns.contains("wins"));
       assertTrue(columns.contains("kills"));
       assertTrue(columns.contains("games"));
+    }
+  }
+
+  @Test
+  void migrate_economyTablesHaveRequiredColumns() throws Exception {
+    try (Database db = openDb()) {
+      Set<String> accounts = columnNames(db, "economy_accounts");
+      assertTrue(accounts.contains("account_id"));
+      assertTrue(accounts.contains("name"));
+      assertTrue(accounts.contains("is_player"));
+      // Cents in an integer column, never a decimal: SQLite has no real DECIMAL type, so a decimal
+      // column would round through a double on exactly the backend every test runs against.
+      assertTrue(accounts.contains("balance"));
+      assertTrue(accounts.contains("created_at"));
+      assertTrue(accounts.contains("updated_at"));
+
+      Set<String> ledger = columnNames(db, "economy_ledger");
+      assertTrue(ledger.contains("id"));
+      assertTrue(ledger.contains("account_id"));
+      assertTrue(ledger.contains("counterparty"));
+      assertTrue(ledger.contains("op"));
+      assertTrue(ledger.contains("amount"));
+      assertTrue(ledger.contains("balance_after"));
+      assertTrue(ledger.contains("reason"));
+      assertTrue(ledger.contains("actor"));
+      assertTrue(ledger.contains("node_id"));
+      assertTrue(ledger.contains("created_at"));
     }
   }
 

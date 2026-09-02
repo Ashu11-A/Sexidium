@@ -95,6 +95,16 @@ public interface NetworkBus extends AutoCloseable {
      * simply has no subscriber, which is the one forward-compat mechanism the bus really has.</p>
      */
     public static final String NODE_DRAIN = "node.drain";
+    /**
+     * A balance changed. Keyed by the ACCOUNT uuid, payload is the name; a peer only invalidates its
+     * cache and re-reads the authoritative value from the shared database.
+     *
+     * <p>Advisory, like {@link #NODE_DRAIN} and {@link #RANK_CHANGED}: the row is the truth, and the
+     * balance cache carries its own TTL, so a dropped message costs a few seconds of staleness on a
+     * sidebar and never a wrong transaction — every mutation is a conditional UPDATE against the
+     * row, which is decided by the database and not by any node's cached idea of the balance.</p>
+     */
+    public static final String ECONOMY_CHANGED = "economy.changed";
 
     private Topics() {
     }
